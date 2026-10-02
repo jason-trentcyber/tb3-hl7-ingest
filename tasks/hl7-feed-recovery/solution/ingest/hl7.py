@@ -488,7 +488,7 @@ class Processor:
         """Spec 5.7.1 steps 2-5 (step 1 is _upsert_patient)."""
         c = self.conn
         c.execute("UPDATE patients SET updated_at=? WHERE mrn_authority=? AND mrn=?", (mt, mrn_auth, survivor))
-        c.execute("UPDATE encounters SET mrn=? WHERE mrn_authority=? AND mrn=?", (survivor, mrn_auth, prior))
+        c.execute("UPDATE encounters SET mrn=?, updated_at=? WHERE mrn_authority=? AND mrn=?", (survivor, mt, mrn_auth, prior))
         c.execute("UPDATE observations SET mrn=? WHERE mrn_authority=? AND mrn=?", (survivor, mrn_auth, prior))
         c.execute(
             "DELETE FROM patient_identifiers WHERE mrn_authority=? AND mrn=? AND (id_authority, id_type) IN "

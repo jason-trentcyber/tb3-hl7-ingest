@@ -34,9 +34,11 @@ import mllp_client as mc  # noqa: E402
 
 AGENT_INGEST = "/app/ingest"
 REF_INGEST = os.path.join(HERE, "reference")
-SEED = int(os.environ.get("HL7_VERIFY_SEED", str(random.SystemRandom().randint(1, 10**9))))
+CAPTURE_SEED = 20260309  # the day shipped to the agent in /app/capture; never graded on
+SEED = int(os.environ.get("HL7_VERIFY_SEED", "0")) or random.SystemRandom().randint(1, 10**6)
+assert SEED != CAPTURE_SEED, "verifier seed must differ from the shipped capture"
 N_CLEAN = 400
-ACK_RE = re.compile(rb"^MSH\|\^~\\&\|.*\r?MSA\|(A[AER])\|([^|\r]*)\|?([^|\r]*)", re.S)
+ACK_RE = re.compile(rb"^MSH\|\^~\\&\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)\|[0-9]{14}\+0000\|\|ACK\^([^|^]*)\^ACK\|[^|]+\|P\|2\.5\.1\r?MSA\|(A[AER])\|([^|\r]*)\|?([^|\r]*)", re.S)
 TABLES = {
     "patients": "mrn_authority, mrn, family_name, given_name, birth_date, sex, updated_at",
     "patient_identifiers": "mrn_authority, mrn, id_authority, id_type, id_value",
@@ -112,12 +114,18 @@ class Daemon:
 
 
 def parse_ack(ack: bytes | None):
+    """-> (MSA-1, MSA-2, MSA-3, MSH-3, MSH-4, MSH-5, MSH-6, MSH-9.2). Wall clock and ACK control id are not compared."""
     if ack is None:
         return None
+    try:
+        ack.decode("ascii")
+    except UnicodeDecodeError:
+        return ("MALFORMED", ack[:80])
     m = ACK_RE.match(ack)
     if not m:
         return ("MALFORMED", ack[:80])
-    return (m.group(1).decode(), m.group(2).decode(), m.group(3).decode())
+    g = [x.decode() for x in m.groups()]
+    return (g[5], g[6], g[7], g[0], g[1], g[2], g[3], g[4])
 
 
 @pytest.fixture(scope="module")
@@ -179,7 +187,7 @@ def test_every_frame_acknowledged(run):
 
 
 def test_ack_codes_and_reasons(run):
-    """MSA-1 (AA/AE/AR), MSA-2 (echoed MSH-10) and MSA-3 (reason) must match the reference for every frame."""
+    """MSA-1/2/3 and the echoed MSH-3..6 and MSH-9.2 must match the reference for every frame."""
     bad = []
     for t in run["tags"]:
         a = run["a_acks"].get(t, (None,))[0]
