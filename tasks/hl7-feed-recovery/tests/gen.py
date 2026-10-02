@@ -126,6 +126,13 @@ class Gen:
                 fi2, mrn, visit, p = self.r.choice(self.visits)
                 body, c = self.adt(FACS[fi2], "A08", [self.pid(p), self.pv1(visit)])
                 out.append((body, {"conn": FACS[fi2][1]}))
+            elif k < 0.64 and len([v for v in self.visits if v[0] == fi]) >= 2:
+                # occasional merge of two existing patients in the same facility
+                a, b = self.r.sample([v for v in self.visits if v[0] == fi], 2)
+                if a[1] != b[1]:
+                    body, c = self.adt(fac, "A40", [self.pid(a[3], extra_ids=False), f"MRG|{b[1]}^^^{fac[1]}^MR"])
+                    out.append((body, {"conn": fac[1]}))
+                    self.visits = [v if v[1] != b[1] else (v[0], a[1], v[2], a[3]) for v in self.visits]
             elif k < 0.75:
                 fi2, mrn, visit, p = self.r.choice(self.visits)
                 body, c = self.adt(FACS[fi2], "A03", [self.pid(p), self.pv1(visit, disch=hl7ts(self.t, None))])
@@ -322,4 +329,62 @@ class Gen:
         obxs = [{"vt": "TX", "id": "11502-2", "name": "LAB RPT", "val": "line1\nline2 same field"}]
         body, c = self.oru(p12, obxs, visit=v12, obr7=False)
         out.append((body, {"tag": "C12-lf-in-field"}))
+
+        # C13 patient merge (A40): survivor + prior each with encounters/obs/ids; merge; then
+        # traffic for the prior MRN must resolve to the survivor; chain merge; self-merge error;
+        # merge of unknown prior; A40 with PV1 ignored; MRG missing -> MISSING_SEGMENT.
+        self.tick()
+        ps = self.new_patient(0)   # survivor
+        pp = self.new_patient(0)   # prior
+        pq = self.new_patient(0)   # earlier prior (chain)
+        vs = f"V{r.randint(10000000, 99999999)}"
+        vp = f"V{r.randint(10000000, 99999999)}"
+        vq = f"V{r.randint(10000000, 99999999)}"
+        for p_, v_ in ((ps, vs), (pp, vp), (pq, vq)):
+            body, c = self.adt(fac, "A01", [self.pid(p_), self.pv1(v_)])
+            out.append((body, {"tag": f"C13-admit-{v_}"}))
+        self.tick()
+        # SSA ids on both survivor and prior (collision: survivor's must win), PI only on prior
+        ids_s = f"{ps[1]}^^^MERCY^MR~111111111^^^SSA^SS"
+        ids_p = f"{pp[1]}^^^MERCY^MR~222222222^^^SSA^SS~77^^^MERCY^PI"
+        body, c = self.adt(fac, "A08", [f"PID|1||{ids_s}||{ps[2]}^{ps[3]}||{ps[4].strftime('%Y%m%d')}|{ps[5]}", self.pv1(vs)])
+        out.append((body, {"tag": "C13-ids-survivor"}))
+        body, c = self.adt(fac, "A08", [f"PID|1||{ids_p}||{pp[2]}^{pp[3]}||{pp[4].strftime('%Y%m%d')}|{pp[5]}", self.pv1(vp)])
+        out.append((body, {"tag": "C13-ids-prior"}))
+        obxs = [{"vt": "NM", "id": "718-7", "name": "HGB", "val": "13.1", "units": "g/dL"}]
+        body, c = self.oru(pp, obxs, visit=vp)
+        out.append((body, {"tag": "C13-oru-prior"}))
+        self.tick()
+        # chain: first merge pq -> pp
+        body, c = self.adt(fac, "A40", [self.pid(pp, extra_ids=False), f"MRG|{pq[1]}^^^MERCY^MR"])
+        out.append((body, {"tag": "C13-merge-q-into-p"}))
+        self.tick()
+        # then pp -> ps, with a PV1 that must be ignored and a changed name that must NOT be applied
+        body, c = self.adt(fac, "A40", [self.pid(ps, extra_ids=False, name_override="WRONG^NAME"), f"MRG|{pp[1]}^^^MERCY^MR", self.pv1("VIGNORED")])
+        out.append((body, {"tag": "C13-merge-p-into-s"}))
+        self.tick()
+        # traffic for old MRNs: A08 for pp's visit under pp's MRN -> resolves to ps.
+        # pq's MRN was the *earlier* link in the chain; after pp->ps only pp is an alias of ps
+        # (5.7.1 step 4), so messages under pq's MRN create a NEW patient. Both are traps.
+        body, c = self.adt(fac, "A08", [self.pid(pp, extra_ids=False), self.pv1(vp, loc="ICU^09^A")])
+        out.append((body, {"tag": "C13-a08-old-mrn"}))
+        obxs = [{"vt": "NM", "id": "2345-7", "name": "GLUCOSE", "val": "101", "units": "mg/dL"}]
+        body, c = self.oru(pq, obxs, visit=vq)
+        out.append((body, {"tag": "C13-oru-stale-alias"}))
+        body, c = self.adt(fac, "A01", [self.pid(pq, extra_ids=False), self.pv1(f"V{r.randint(10000000, 99999999)}")])
+        out.append((body, {"tag": "C13-a01-stale-alias"}))
+        # errors
+        body, c = self.adt(fac, "A40", [self.pid(ps, extra_ids=False), f"MRG|{ps[1]}^^^MERCY^MR"])
+        out.append((body, {"tag": "C13-self-merge-BAD_VALUE"}))
+        body, c = self.adt(fac, "A40", [self.pid(ps, extra_ids=False), f"MRG|{pp[1]}^^^MERCY^MR"])
+        out.append((body, {"tag": "C13-merge-alias-of-self-BAD_VALUE"}))
+        body, c = self.adt(fac, "A40", [self.pid(ps, extra_ids=False)])
+        out.append((body, {"tag": "C13-no-mrg-MISSING_SEGMENT"}))
+        body, c = self.adt(fac, "A40", [self.pid(ps, extra_ids=False), "MRG|999^^^SSA^SS"])
+        out.append((body, {"tag": "C13-mrg-no-mrn-NO_MRN"}))
+        # merge of an unknown prior into a brand-new survivor
+        pn = self.new_patient(0)
+        body, c = self.adt(fac, "A40", [self.pid(pn, extra_ids=False), "MRG|424242^^^MERCY^MR"])
+        out.append((body, {"tag": "C13-merge-unknown-prior"}))
+        self.visits.append((0, ps[1], vs, ps))
         return out

@@ -116,9 +116,9 @@ reason shown:
 | MSH-10 | Message Control ID; non-empty | `MISSING_FIELD` |
 | MSH-12 | Version ID; must begin with `2.` | `BAD_VERSION` |
 
-4.2. Supported message types are `ADT^A01`, `ADT^A03`, `ADT^A04`, `ADT^A08`
-and `ORU^R01`. Any other MSH-9 value is an application reject (reason
-`UNSUPPORTED_TYPE`, ACK code `AR`, Section 6.3).
+4.2. Supported message types are `ADT^A01`, `ADT^A03`, `ADT^A04`, `ADT^A08`,
+`ADT^A40` and `ORU^R01`. Any other MSH-9 value is an application reject
+(reason `UNSUPPORTED_TYPE`, ACK code `AR`, Section 6.3).
 
 4.3. HL7 timestamps have the form `YYYYMMDD[HHMM[SS[.S[S[S[S]]]]]][+/-ZZZZ]`.
 The date portion is mandatory. If the timezone offset is present it is used.
@@ -129,10 +129,12 @@ Timestamps are stored in the database as UTC in the form
 fractional seconds are truncated. A timestamp with an invalid calendar date,
 time or offset is a structural error (reason `BAD_TIMESTAMP`).
 
-4.4. ADT messages must contain exactly one PID segment and exactly one PV1
-segment; ORU^R01 messages must contain exactly one PID segment, at least one
-OBR segment and at least one OBX segment per OBR. Violations are structural
-errors (reason `MISSING_SEGMENT` or `DUPLICATE_SEGMENT`).
+4.4. ADT messages other than `ADT^A40` must contain exactly one PID segment
+and exactly one PV1 segment. `ADT^A40` must contain exactly one PID segment
+and exactly one MRG segment; a PV1 segment, if present, is ignored. ORU^R01
+messages must contain exactly one PID segment, at least one OBR segment and
+at least one OBX segment per OBR. Violations are structural errors (reason
+`MISSING_SEGMENT` or `DUPLICATE_SEGMENT`).
 
 4.5. PID-3 (Patient Identifier List) is a repeating field. Each repetition is
 `ID^check digit^check digit scheme^assigning authority^identifier type code`.
@@ -142,9 +144,15 @@ the sending facility's configured `mrn_authority` in `config.json`. A message
 with no such repetition is a structural error (reason `NO_MRN`). Every other
 repetition with a non-empty ID is stored in `patient_identifiers`.
 
-4.6. ADT messages must carry a visit number in PV1-19 (component 1 non-empty);
-absence is a structural error (reason `MISSING_FIELD`). ORU^R01 messages may
-carry PV1-19; if present it must be non-empty.
+4.6. ADT messages other than `ADT^A40` must carry a visit number in PV1-19
+(component 1 non-empty); absence is a structural error (reason
+`MISSING_FIELD`). ORU^R01 messages may carry PV1-19; if present it must be
+non-empty.
+
+4.7. In `ADT^A40`, MRG-1 (Prior Patient Identifier List) has the same format
+as PID-3 and the prior patient's MRN is selected from it by the rule in 4.5
+(reason `NO_MRN` if there is none). A prior MRN equal to the PID-3 MRN is a
+structural error (reason `BAD_VALUE`).
 
 ## 5. Processing semantics
 
@@ -163,7 +171,9 @@ processed normally.
 
 ### 5.2. Patients
 
-A patient is identified by (`mrn_authority`, `mrn`) as determined by 4.5.
+A patient is identified by (`mrn_authority`, `mrn`) as determined by 4.5 and
+then by the alias rule in 5.7.3: wherever this section and 5.3 to 5.5 say "the
+MRN", they mean the MRN after alias resolution.
 `patients` has columns `mrn_authority`, `mrn`, `family_name`, `given_name`,
 `birth_date`, `sex`, `updated_at`. Name components come from PID-5 (family
 name is component 1, given name is component 2; only the first repetition of
@@ -238,13 +248,58 @@ the stored `observed_at`, and is ignored (no change, still `AA`) otherwise.
 
 ### 5.6. Ingest log
 
-Every frame that is received and successfully decoded far enough to read
-MSH-4 and MSH-10 produces one row in `ingest_log` with columns
+Every frame whose MSH-4 and MSH-10 are both recoverable and non-empty (6.5)
+produces one row in `ingest_log` with columns
 `sending_facility`, `control_id`, `message_type` (MSH-9 components 1 and 2
 joined by `^`, or empty), `received_at` (daemon wall clock, UTC), `outcome`
 (one of `ACCEPTED`, `DUPLICATE`, `ERROR`, `REJECTED`) and `reason` (the
-reason code, or empty). Frames that cannot be decoded that far produce no
-`ingest_log` row and are handled by Section 7 only.
+`reason code, or empty). Frames for which either field is empty or not
+recoverable produce no `ingest_log` row and are handled by Section 7 only.
+
+### 5.7. Patient merge
+
+`ADT^A40` merges the prior patient (MRG-1, 4.7) into the surviving patient
+(PID-3). Both MRNs are in the facility's `mrn_authority`.
+
+5.7.1. Effect, in order, all within the message's transaction:
+
+1. The surviving patient row is created if it does not exist, using the PID
+   values present in the message (5.2). If it exists, it is not modified by
+   the PID values (an A40 is not an update), except for `updated_at`, which
+   is set to MSH-7 in every case.
+2. Every row of `encounters` and `observations` whose (`mrn_authority`,
+   `mrn`) is the prior patient is re-keyed to the surviving patient.
+3. Every row of `patient_identifiers` of the prior patient is re-keyed to the
+   surviving patient, except where the surviving patient already has a row
+   with the same (`id_authority`, `id_type`); such prior rows are dropped.
+   PID-3 repetitions of the message other than the MRN are then upserted as
+   in 5.3.
+4. The prior MRN is retained as an identifier of the surviving patient: a row
+   in `patient_identifiers` with `id_authority` = the facility's
+   `mrn_authority`, `id_type` = `MRG`, `id_value` = the prior MRN. Because of
+   the uniqueness constraint in 5.3 there is at most one `MRG` row per
+   surviving patient. Step 3 may have re-keyed the prior patient's own `MRG`
+   row to the survivor; this step then replaces it. Consequently only the
+   most recent prior MRN of a survivor is an alias (5.7.3); MRNs merged
+   earlier in a chain are no longer recognised and a later message for one
+   of them creates a new patient.
+5. The prior patient row is deleted from `patients`.
+
+A merge whose prior patient does not exist in `patients` is still valid:
+steps 1, 3 (second sentence) and 4 apply, and the ACK is `AA`.
+
+5.7.2. The merge is subject to 5.1 like every other message.
+
+5.7.3. Alias resolution. After a merge, messages may still arrive for the
+prior MRN. When a message's MRN (4.5) does not exist in `patients` but is the
+`id_value` of a `patient_identifiers` row with `id_type` = `MRG` and
+`id_authority` = `mrn_authority`, the message is applied to that row's
+(`mrn_authority`, `mrn`) patient instead, as if PID-3 had named it. The rule
+is applied repeatedly until it reaches an MRN that exists in `patients` or is
+not an alias (at most 16 steps; a longer chain is a structural error,
+`BAD_VALUE`). It applies to the PID-3 MRN of every message type, and to the
+MRG-1 MRN of an `ADT^A40`. The ACK and `ingest_log` are unaffected by alias
+resolution. An MRN that exists in `patients` is never treated as an alias.
 
 ## 6. Acknowledgements
 
@@ -260,6 +315,15 @@ code.
 6.4. When the inbound frame cannot be parsed far enough to recover MSH-10, the
 ACK must still be sent, with MSA-2 empty, code `AE`, and MSA-3 the reason
 code. The MSH-3 through MSH-6 of such an ACK are empty.
+
+6.5. MSH-4 and MSH-10 are "recoverable" exactly when the MSH segment (the
+bytes up to the first `<CR>`, or the whole frame if there is none) is valid
+ASCII, begins with `MSH|^~\\&|`, and the corresponding fields are non-empty
+after splitting on `|`. By 2.2 this does not depend on MSH-18, so a frame
+rejected with `BAD_CHARSET` or `DECODE_ERROR` still has recoverable MSH-4 and
+MSH-10 and is acknowledged, logged (5.6) and dead-lettered (7) with them. A
+frame rejected with `BAD_ENCODING_CHARS` never has recoverable MSH-4 or
+MSH-10, whatever bytes follow.
 
 ## 7. Dead-letter queue
 
@@ -287,8 +351,8 @@ When more than one error applies, the first one encountered in the following
 order is reported: `BAD_ENCODING_CHARS`, `BAD_CHARSET`, `DECODE_ERROR`,
 `MISSING_FIELD` (MSH-4, MSH-10, then MSH-9), `UNKNOWN_FACILITY`,
 `BAD_VERSION`, `BAD_TIMESTAMP` (MSH-7), `UNSUPPORTED_TYPE`, `BAD_ESCAPE`,
-`MISSING_SEGMENT`, `DUPLICATE_SEGMENT`, `NO_MRN`, `MISSING_FIELD` (PV1-19),
-`BAD_TIMESTAMP` (other fields), `BAD_VALUE`.
+`MISSING_SEGMENT`, `DUPLICATE_SEGMENT`, `NO_MRN` (PID-3, then MRG-1),
+`MISSING_FIELD` (PV1-19), `BAD_TIMESTAMP` (other fields), `BAD_VALUE`.
 
 ## 9. Database
 

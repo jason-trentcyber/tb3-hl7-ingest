@@ -55,8 +55,10 @@ class Daemon:
         env = dict(os.environ, HL7_PORT=str(self.port), HL7_DB=self.db, HL7_DLQ=self.dlq,
                    HL7_CONFIG=os.path.join(ingest_dir, "config.json"), PYTHONDONTWRITEBYTECODE="1")
         self.log = open(os.path.join(self.tmp, "daemon.log"), "wb")
+        # -E ignores PYTHON* env vars, -s ignores user site; the script directory stays on
+        # sys.path exactly as the documented `python3 /app/ingest/server.py` invocation does.
         self.proc = subprocess.Popen(
-            [sys.executable, "-I", os.path.join(ingest_dir, "server.py")],
+            [sys.executable, "-E", "-s", os.path.join(ingest_dir, "server.py")],
             cwd=ingest_dir, env=env, stdout=self.log, stderr=subprocess.STDOUT,
         )
         for _ in range(100):
