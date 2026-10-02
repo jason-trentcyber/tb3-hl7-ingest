@@ -109,7 +109,7 @@ class Gen:
 
     # -- stream --------------------------------------------------------------
 
-    def clean(self, n):
+    def clean(self, n, merges=True):
         out = []
         for _ in range(n):
             self.tick()
@@ -121,22 +121,22 @@ class Gen:
                 visit = f"V{self.r.randint(10000000, 99999999)}"
                 self.visits.append((fi, p[1], visit, p))
                 body, c = self.adt(fac, self.r.choice(["A01", "A04"]), [self.pid(p), self.pv1(visit, admit=hl7ts(self.t - timedelta(minutes=3), fac[2]))])
-                out.append((body, {"conn": fac[1]}))
+                out.append((body, {"conn": fac[1], "mrn": p[1]}))
             elif k < 0.6:
                 fi2, mrn, visit, p = self.r.choice(self.visits)
                 body, c = self.adt(FACS[fi2], "A08", [self.pid(p), self.pv1(visit)])
-                out.append((body, {"conn": FACS[fi2][1]}))
-            elif k < 0.64 and len([v for v in self.visits if v[0] == fi]) >= 2:
+                out.append((body, {"conn": FACS[fi2][1], "mrn": p[1]}))
+            elif k < 0.64 and merges and len([v for v in self.visits if v[0] == fi]) >= 2:
                 # occasional merge of two existing patients in the same facility
                 a, b = self.r.sample([v for v in self.visits if v[0] == fi], 2)
                 if a[1] != b[1]:
                     body, c = self.adt(fac, "A40", [self.pid(a[3], extra_ids=False), f"MRG|{b[1]}^^^{fac[1]}^MR"])
-                    out.append((body, {"conn": fac[1]}))
+                    out.append((body, {"conn": fac[1], "mrn": a[1]}))
                     self.visits = [v if v[1] != b[1] else (v[0], a[1], v[2], a[3]) for v in self.visits]
             elif k < 0.75:
                 fi2, mrn, visit, p = self.r.choice(self.visits)
                 body, c = self.adt(FACS[fi2], "A03", [self.pid(p), self.pv1(visit, disch=hl7ts(self.t, None))])
-                out.append((body, {"conn": FACS[fi2][1]}))
+                out.append((body, {"conn": FACS[fi2][1], "mrn": p[1]}))
             else:
                 fi2, mrn, visit, p = self.r.choice(self.visits)
                 if fi2 != 0:
@@ -152,7 +152,7 @@ class Gen:
                         val = self.r.choice(["YELLOW", "AMBER", "CLEAR"])
                     obxs.append({"vt": o[2], "id": o[0], "name": o[1], "val": val, "units": o[3]})
                 body, c = self.oru(p, obxs, visit=visit)
-                out.append((body, {"conn": "MERCY"}))
+                out.append((body, {"conn": "MERCY", "mrn": p[1]}))
         return out
 
     def cruxes(self):

@@ -31,12 +31,15 @@ daemon must serve every connection independently; a slow or misbehaving
 sender must not delay acknowledgements on another connection.
 
 1.5. For every complete frame received, the daemon must write exactly one ACK
-frame (Section 6) back on the same connection before processing the next frame
-from that connection. The ACK for a frame must be written within 2 seconds of
-the frame being completely received.
+frame (Section 6) back on the same connection, in the order the frames
+arrived on that connection. Frames on one connection may be processed in a
+pipelined fashion (several frames read before the first is acknowledged), but
+ACKs are never reordered. The ACK for a frame must be written within 2
+seconds of the frame being completely received, under the load of Section
+10.
 
 1.6. The daemon must never close a connection in response to message content.
-It may close a connection only when the peer closes it.
+It may close a connection only when the peer closes it, or under 10.4.
 
 ## 2. Character encoding
 
@@ -365,3 +368,76 @@ The database is SQLite at the path given by the `HL7_DB` environment variable
 (default `/app/data/clinical.db`). On startup the daemon creates the schema
 from `/app/ingest/schema.sql` if the tables do not exist. The schema must not
 be changed.
+
+## 10. Durability, restart and load
+
+The engines treat an ACK as proof of delivery. Once a frame has been
+acknowledged `AA`, the engine discards it forever; a frame that was not
+acknowledged (connection lost, daemon died, timeout) is retransmitted with the
+same MSH-10 after the engine reconnects.
+
+10.1. **Durable before acknowledged.** The daemon must not write the ACK for a
+frame until every database change implied by that frame, including its
+`ingest_log` row, has been committed to the database file such that it
+survives the daemon process being killed with `SIGKILL` immediately after
+the ACK bytes are written. The same holds for the dead-letter file: the DLQ
+line for a non-`AA` frame must be flushed to the operating system before the
+ACK is written. (The daemon is not required to survive loss of power; the
+operating system's page cache is sufficient. `PRAGMA synchronous=OFF` does
+not break this requirement by itself, but commit-later strategies do.)
+
+10.2. **Kill-safe.** If the daemon is killed at any point, the database must
+be left in a state where every message is either fully applied with its
+`ingest_log` row, or not applied at all with no `ingest_log` row. On restart
+the daemon must open the existing database, finish or discard any
+in-progress work, and continue serving. The engine's retransmissions of
+un-ACKed frames must then produce exactly the result they would have
+produced had the daemon never died: either the message is applied for the
+first time, or it is already present and is handled as a duplicate (5.1).
+Retransmissions after a restart may arrive on new connections, interleaved
+with new traffic, and in a different order relative to other connections
+than the original attempt.
+
+10.3. **Throughput.** The daemon must sustain the combined load of eight
+engine connections sending as fast as the daemon acknowledges, for a total of
+at least 6000 messages, within 2.5 times the time the vendor's reference
+daemon takes on the same hardware, while meeting 10.1 and 1.5. The reference
+daemon is single-process, standard-library Python; the budget is not met by
+a daemon that serialises connections, re-opens the database per message, or
+re-reads the whole `ingest_log` to detect duplicates.
+
+10.4. **Resource limits.** A frame body larger than 1 MiB (1048576 bytes
+between `<VT>` and `<FS>`) is not a valid message. On reading more than 1
+MiB without finding `<FS><CR>` the daemon must close the connection without
+an ACK and without a DLQ entry, and must not buffer more than 1 MiB per
+connection for a frame. A connection on which a frame has been started
+(`<VT>` seen) and not completed within 30 seconds must likewise be closed.
+These are the only cases in which the daemon closes a connection itself.
+Bytes outside a frame (1.2) do not count against the limit and do not start
+the timer.
+
+10.5. **Startup on an existing database** must complete within 5 seconds for
+a database of up to 100 000 patients.
+
+## 11. Reference capture
+
+`/app/capture` holds one ordinary day of recorded traffic between the
+interface engines and the vendor's reference daemon, taken after the engines
+were upgraded to this version of the contract:
+
+- `feed/conn-NN-<engine>.inbound.mllp`: the exact bytes the engine wrote to
+  its TCP connection, including MLLP framing. The three connections were
+  open concurrently.
+- `feed/conn-NN-<engine>.acks.mllp`: the exact bytes the reference daemon
+  wrote back on that connection, in order. The n-th ACK on a connection
+  answers the n-th frame on it.
+- `reference.db`: the clinical database after the day, created from the
+  same `schema.sql`.
+- `errors.jsonl`: the dead-letter file after the day (empty: nothing was
+  rejected that day).
+
+`ingest_log.received_at` and ACK MSH-7 are wall clock values from the day of
+the capture and are not expected to match. Every other byte and row is. The
+capture is an ordinary day: it does not exercise the error paths, the
+out-of-order cases, merges, or the conditions of Section 10. It is a
+regression check, not a definition; this document is the definition.

@@ -22,7 +22,7 @@ tags = ["hl7", "mllp", "healthcare", "debugging", "networking", "python", "sqlit
 expert_time_estimate_hours = 6
 
 [verifier]
-timeout_sec = 900.0
+timeout_sec = 1500.0
 environment_mode = "separate"
 collect = []
 

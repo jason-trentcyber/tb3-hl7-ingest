@@ -281,13 +281,14 @@ class Processor:
             if self._is_duplicate(hdr.sending_facility, ctrl):
                 self._log(hdr.sending_facility, ctrl, hdr.message_type, received_at, "DUPLICATE", "")
                 return "AA", ctrl, "", hdr
-            self.conn.execute("BEGIN")
+            self.conn.execute("SAVEPOINT msg")
             try:
                 self._apply(msg)
-                self._log(hdr.sending_facility, ctrl, hdr.message_type, received_at, "ACCEPTED", "", in_txn=True)
-                self.conn.execute("COMMIT")
+                self._log(hdr.sending_facility, ctrl, hdr.message_type, received_at, "ACCEPTED", "")
+                self.conn.execute("RELEASE msg")
             except Exception:
-                self.conn.execute("ROLLBACK")
+                self.conn.execute("ROLLBACK TO msg")
+                self.conn.execute("RELEASE msg")
                 raise
             return "AA", ctrl, "", hdr
         except HL7Error as e:
@@ -297,13 +298,11 @@ class Processor:
 
     # -- helpers ------------------------------------------------------------
 
-    def _log(self, fac, ctrl, mt, received_at, outcome, reason, in_txn=False):
+    def _log(self, fac, ctrl, mt, received_at, outcome, reason):
         self.conn.execute(
             "INSERT INTO ingest_log (sending_facility, control_id, message_type, received_at, outcome, reason) VALUES (?,?,?,?,?,?)",
             (fac, ctrl, mt, received_at, outcome, reason),
         )
-        if not in_txn:
-            self.conn.commit()
 
     def _is_duplicate(self, fac, ctrl) -> bool:
         row = self.conn.execute(

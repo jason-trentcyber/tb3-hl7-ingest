@@ -31,12 +31,15 @@ daemon must serve every connection independently; a slow or misbehaving
 sender must not delay acknowledgements on another connection.
 
 1.5. For every complete frame received, the daemon must write exactly one ACK
-frame (Section 6) back on the same connection before processing the next frame
-from that connection. The ACK for a frame must be written within 2 seconds of
-the frame being completely received.
+frame (Section 6) back on the same connection, in the order the frames
+arrived on that connection. Frames on one connection may be processed in a
+pipelined fashion (several frames read before the first is acknowledged), but
+ACKs are never reordered. The ACK for a frame must be written within 2
+seconds of the frame being completely received, under the load of Section
+10.
 
 1.6. The daemon must never close a connection in response to message content.
-It may close a connection only when the peer closes it.
+It may close a connection only when the peer closes it, or under 10.4.
 
 ## 2. Character encoding
 
@@ -159,33 +162,156 @@ structural error (reason `BAD_VALUE`).
 Processing of a message is atomic: either every row change implied by the
 message is committed, or none is.
 
-The normative text of this section (5.1 Idempotency, 5.2 Patients, 5.3
-Patient identifiers, 5.4 Encounters, 5.5 Observations, 5.6 Ingest log, 5.7
-Patient merge) was maintained in the vendor's interface workbook, which is no
-longer available. It is not reproduced here. The behaviour it specified is
-fully determined by the reference capture in `/app/capture` (see Section 10),
-which was recorded from the vendor's reference daemon, and the daemon is
-graded against that behaviour.
+### 5.1. Idempotency
 
-The following is known from the schema and from the engine configuration:
+The pair (MSH-4, MSH-10) identifies a message. If a message arrives whose
+(MSH-4, MSH-10) matches a message that has already been accepted with ACK code
+`AA`, the daemon must return `AA` again and make no database changes, even if
+the message body differs. The duplicate is recorded in `ingest_log` with
+`outcome = 'DUPLICATE'`. Messages that were rejected (`AE` or `AR`) are not
+remembered for this purpose; a corrected resend with the same control ID is
+processed normally.
 
-- The patient record key is (`mrn_authority`, `mrn`) as selected by 4.5.
-- A message that repeats an already accepted (MSH-4, MSH-10) pair is
-  acknowledged `AA` and recorded in `ingest_log` with outcome `DUPLICATE`.
-- `ingest_log.outcome` is one of `ACCEPTED`, `DUPLICATE`, `ERROR`,
-  `REJECTED`; `reason` is the reason code or empty.
-- Every frame whose MSH-4 and MSH-10 are both recoverable and non-empty (6.5)
-  produces exactly one `ingest_log` row. Other frames produce none.
-- `ADT^A40` is a patient merge: MRG-1 names the prior patient, PID-3 the
-  surviving patient (4.7).
-- All timestamps stored in the database are UTC in the form of 4.3.
+### 5.2. Patients
+
+A patient is identified by (`mrn_authority`, `mrn`) as determined by 4.5 and
+then by the alias rule in 5.7.3: wherever this section and 5.3 to 5.5 say "the
+MRN", they mean the MRN after alias resolution.
+`patients` has columns `mrn_authority`, `mrn`, `family_name`, `given_name`,
+`birth_date`, `sex`, `updated_at`. Name components come from PID-5 (family
+name is component 1, given name is component 2; only the first repetition of
+PID-5 is used). `birth_date` comes from PID-7 and is stored as `YYYY-MM-DD`
+(the date portion of the HL7 timestamp; time and offset, if present, are
+ignored). `sex` comes from PID-8.
+
+For every message type, the patient row is created if it does not exist, using
+the PID values present in the message.
+
+If the patient row already exists, PID values are applied as follows:
+
+- `ADT^A08` (update): each of `family_name`, `given_name`, `birth_date`, `sex`
+  is set to the message value when the field is non-empty; set to SQL `NULL`
+  when the field is the HL7 null `""`; and left unchanged when the field is
+  empty.
+- All other types: the existing values are left unchanged, regardless of the
+  message content.
+
+`updated_at` is set to the message's MSH-7 (as UTC) whenever the row is
+created or any column of it changes, and is otherwise unchanged.
+
+### 5.3. Patient identifiers
+
+`patient_identifiers` has columns `mrn_authority`, `mrn`, `id_authority`,
+`id_type`, `id_value` and a uniqueness constraint on
+(`mrn_authority`, `mrn`, `id_authority`, `id_type`). Every PID-3 repetition
+other than the MRN repetition, with a non-empty ID, is upserted into this
+table. Rows are never deleted.
+
+### 5.4. Encounters
+
+`encounters` has columns `mrn_authority`, `mrn`, `visit_number`,
+`patient_class`, `location`, `attending_id`, `admit_time`, `discharge_time`,
+`updated_at`, and is unique on (`mrn_authority`, `visit_number`).
+
+| Type | Effect |
+|---|---|
+| `ADT^A01`, `ADT^A04` | Upsert the encounter. `patient_class` = PV1-2, `location` = PV1-3 component 1 (point of care), `attending_id` = PV1-7 component 1, `admit_time` = PV1-44 (as UTC; if PV1-44 is empty, MSH-7). `discharge_time` is left unchanged. |
+| `ADT^A08` | If the encounter does not exist, create it as for `A01`. If it exists, apply `patient_class`, `location`, `attending_id`, `admit_time` with the same non-empty / null / empty rules as 5.2. |
+| `ADT^A03` | If the encounter does not exist, create it as for `A01`, then set `discharge_time` = PV1-45 (as UTC; if empty, MSH-7). If it exists, set `discharge_time` only. |
+
+Messages may arrive out of order. An `ADT^A08` or `ADT^A03` for a visit that
+has not been admitted yet is valid and is handled by the "does not exist"
+branch above. `updated_at` follows the same rule as for patients.
+
+### 5.5. Observations
+
+For `ORU^R01`, `observations` has columns `mrn_authority`, `mrn`,
+`visit_number` (nullable), `filler_order_number` (OBR-3 component 1),
+`observation_id` (OBX-3 component 1), `sub_id` (OBX-4, may be empty),
+`value_type` (OBX-2), `value`, `units` (OBX-6 component 1), `status`
+(OBX-11), `observed_at` (OBX-14 as UTC; if empty, OBR-7; if that is empty,
+MSH-7), and is unique on (`mrn_authority`, `filler_order_number`,
+`observation_id`, `sub_id`). Each OBX belongs to the most recent preceding OBR.
+
+`value` is derived from OBX-5 according to OBX-2:
+
+| OBX-2 | `value` |
+|---|---|
+| `NM` | OBX-5 component 1, which must parse as a decimal number; stored as the canonical decimal string with no exponent, no leading `+`, no trailing zeros after the point and no trailing point (`007.50` -> `7.5`, `12.0` -> `12`, `-0.0` -> `0`). Non-numeric content is a structural error (`BAD_VALUE`). |
+| `ST`, `TX`, `FT` | the full OBX-5 field after escape decoding, with repetitions joined by a single `<CR>`; components and subcomponents are not split (so `^` inside such a value is literal). |
+| `CE`, `CWE` | `code^text^system` from components 1, 2 and 3, joined with `^` after escape decoding of each component. |
+| `DT`, `TS` | the timestamp in OBX-5 component 1 converted as in 4.3 (`DT` yields `YYYY-MM-DD`). |
+| `ED` | SHA-256 hex digest of the base64-decoded bytes of component 5. Invalid base64 is a structural error (`BAD_VALUE`). |
+
+Any other OBX-2 value is a structural error (`BAD_VALUE`). Within one message,
+the same (`filler_order_number`, `observation_id`, `sub_id`) appearing twice is
+`DUPLICATE_SEGMENT`. Across messages, a later ORU^R01 for the same key
+replaces the row (upsert) when its `observed_at` is greater than or equal to
+the stored `observed_at`, and is ignored (no change, still `AA`) otherwise.
+
+### 5.6. Ingest log
+
+Every frame whose MSH-4 and MSH-10 are both recoverable and non-empty (6.5)
+produces one row in `ingest_log` with columns
+`sending_facility`, `control_id`, `message_type` (MSH-9 components 1 and 2
+joined by `^`, or empty), `received_at` (daemon wall clock, UTC), `outcome`
+(one of `ACCEPTED`, `DUPLICATE`, `ERROR`, `REJECTED`) and `reason` (the
+`reason code, or empty). Frames for which either field is empty or not
+recoverable produce no `ingest_log` row and are handled by Section 7 only.
+
+### 5.7. Patient merge
+
+`ADT^A40` merges the prior patient (MRG-1, 4.7) into the surviving patient
+(PID-3). Both MRNs are in the facility's `mrn_authority`.
+
+5.7.1. Effect, in order, all within the message's transaction:
+
+1. The surviving patient row is created if it does not exist, using the PID
+   values present in the message (5.2). If it exists, it is not modified by
+   the PID values (an A40 is not an update), except for `updated_at`, which
+   is set to MSH-7 in every case.
+2. Every row of `encounters` and `observations` whose (`mrn_authority`,
+   `mrn`) is the prior patient is re-keyed to the surviving patient. Re-keying
+   changes the `mrn` column, so each re-keyed `encounters` row gets
+   `updated_at` = MSH-7 (5.4).
+3. Every row of `patient_identifiers` of the prior patient is re-keyed to the
+   surviving patient, except where the surviving patient already has a row
+   with the same (`id_authority`, `id_type`); such prior rows are dropped.
+   PID-3 repetitions of the message other than the MRN are then upserted as
+   in 5.3.
+4. The prior MRN is retained as an identifier of the surviving patient: a row
+   in `patient_identifiers` with `id_authority` = the facility's
+   `mrn_authority`, `id_type` = `MRG`, `id_value` = the prior MRN. Because of
+   the uniqueness constraint in 5.3 there is at most one `MRG` row per
+   surviving patient. Step 3 may have re-keyed the prior patient's own `MRG`
+   row to the survivor; this step then replaces it. Consequently only the
+   most recent prior MRN of a survivor is an alias (5.7.3); MRNs merged
+   earlier in a chain are no longer recognised and a later message for one
+   of them creates a new patient.
+5. The prior patient row is deleted from `patients`.
+
+A merge whose prior patient does not exist in `patients` is still valid:
+steps 1, 3 (second sentence) and 4 apply, and the ACK is `AA`.
+
+5.7.2. The merge is subject to 5.1 like every other message.
+
+5.7.3. Alias resolution. After a merge, messages may still arrive for the
+prior MRN. When a message's MRN (4.5) does not exist in `patients` but is the
+`id_value` of a `patient_identifiers` row with `id_type` = `MRG` and
+`id_authority` = `mrn_authority`, the message is applied to that row's
+(`mrn_authority`, `mrn`) patient instead, as if PID-3 had named it. The rule
+is applied repeatedly until it reaches an MRN that exists in `patients` or is
+not an alias (at most 16 steps; a longer chain is a structural error,
+`BAD_VALUE`). It applies to the PID-3 MRN of every message type, and to the
+MRG-1 MRN of an `ADT^A40`. The ACK and `ingest_log` are unaffected by alias
+resolution. An MRN that exists in `patients` is never treated as an alias.
 
 ## 6. Acknowledgements
 
 6.1. The ACK is an HL7 message `MSH|^~\&|<MSH-5 of inbound>|<MSH-6 of inbound>|<MSH-3 of inbound>|<MSH-4 of inbound>|<now>||ACK^<MSH-9.2 of inbound>^ACK|<new control id>|P|2.5.1<CR>MSA|<code>|<MSH-10 of inbound>|<text><CR>` framed as in 1.2. `<now>` is the daemon's wall clock as an HL7 timestamp with a `+0000` offset. The ACK is always encoded as ASCII; non-ASCII characters in `<text>` must be replaced by `?`.
 
 6.2. ACK code `AA` is used when the message was accepted (committed) or is a
-duplicate under Section 5.
+duplicate under 5.1.
 
 6.3. ACK code `AR` is used for `UNSUPPORTED_TYPE`. ACK code `AE` is used for
 every other structural error. In both cases MSA-3 (`<text>`) is the reason
@@ -203,7 +329,7 @@ bytes up to the first `<CR>`, or the whole frame if there is none) is valid
 ASCII, begins with `MSH|^~\\&|`, and the corresponding fields are non-empty
 after splitting on `|`. By 2.2 this does not depend on MSH-18, so a frame
 rejected with `BAD_CHARSET` or `DECODE_ERROR` still has recoverable MSH-4 and
-MSH-10 and is acknowledged, logged (Section 5) and dead-lettered (7) with them. A
+MSH-10 and is acknowledged, logged (5.6) and dead-lettered (7) with them. A
 frame rejected with `BAD_ENCODING_CHARS` never has recoverable MSH-4 or
 MSH-10, whatever bytes follow.
 
@@ -220,7 +346,7 @@ the file given by the `HL7_DLQ` environment variable (default
 - `reason`: the reason code
 - `raw_b64`: the exact bytes between `<VT>` and `<FS>` of the frame, base64
 
-Duplicates (Section 5) are not written to the dead-letter file.
+Duplicates (5.1) are not written to the dead-letter file.
 
 ## 8. Reason codes
 
@@ -243,22 +369,75 @@ The database is SQLite at the path given by the `HL7_DB` environment variable
 from `/app/ingest/schema.sql` if the tables do not exist. The schema must not
 be changed.
 
-## 10. Reference capture
+## 10. Durability, restart and load
 
-`/app/capture` holds one day of recorded traffic between the interface engines
-and the vendor's reference daemon, taken after the engines were upgraded to
-this version of the contract:
+The engines treat an ACK as proof of delivery. Once a frame has been
+acknowledged `AA`, the engine discards it forever; a frame that was not
+acknowledged (connection lost, daemon died, timeout) is retransmitted with the
+same MSH-10 after the engine reconnects.
+
+10.1. **Durable before acknowledged.** The daemon must not write the ACK for a
+frame until every database change implied by that frame, including its
+`ingest_log` row, has been committed to the database file such that it
+survives the daemon process being killed with `SIGKILL` immediately after
+the ACK bytes are written. The same holds for the dead-letter file: the DLQ
+line for a non-`AA` frame must be flushed to the operating system before the
+ACK is written. (The daemon is not required to survive loss of power; the
+operating system's page cache is sufficient. `PRAGMA synchronous=OFF` does
+not break this requirement by itself, but commit-later strategies do.)
+
+10.2. **Kill-safe.** If the daemon is killed at any point, the database must
+be left in a state where every message is either fully applied with its
+`ingest_log` row, or not applied at all with no `ingest_log` row. On restart
+the daemon must open the existing database, finish or discard any
+in-progress work, and continue serving. The engine's retransmissions of
+un-ACKed frames must then produce exactly the result they would have
+produced had the daemon never died: either the message is applied for the
+first time, or it is already present and is handled as a duplicate (5.1).
+Retransmissions after a restart may arrive on new connections, interleaved
+with new traffic, and in a different order relative to other connections
+than the original attempt.
+
+10.3. **Throughput.** The daemon must sustain the combined load of eight
+engine connections sending as fast as the daemon acknowledges, for a total of
+at least 6000 messages, within 2.5 times the time the vendor's reference
+daemon takes on the same hardware, while meeting 10.1 and 1.5. The reference
+daemon is single-process, standard-library Python; the budget is not met by
+a daemon that serialises connections, re-opens the database per message, or
+re-reads the whole `ingest_log` to detect duplicates.
+
+10.4. **Resource limits.** A frame body larger than 1 MiB (1048576 bytes
+between `<VT>` and `<FS>`) is not a valid message. On reading more than 1
+MiB without finding `<FS><CR>` the daemon must close the connection without
+an ACK and without a DLQ entry, and must not buffer more than 1 MiB per
+connection for a frame. A connection on which a frame has been started
+(`<VT>` seen) and not completed within 30 seconds must likewise be closed.
+These are the only cases in which the daemon closes a connection itself.
+Bytes outside a frame (1.2) do not count against the limit and do not start
+the timer.
+
+10.5. **Startup on an existing database** must complete within 5 seconds for
+a database of up to 100 000 patients.
+
+## 11. Reference capture
+
+`/app/capture` holds one ordinary day of recorded traffic between the
+interface engines and the vendor's reference daemon, taken after the engines
+were upgraded to this version of the contract:
 
 - `feed/conn-NN-<engine>.inbound.mllp`: the exact bytes the engine wrote to
-  its TCP connection, including MLLP framing. Connections `01` to `03` were
-  open concurrently; `04` was opened after they closed.
+  its TCP connection, including MLLP framing. The three connections were
+  open concurrently.
 - `feed/conn-NN-<engine>.acks.mllp`: the exact bytes the reference daemon
   wrote back on that connection, in order. The n-th ACK on a connection
   answers the n-th frame on it.
 - `reference.db`: the clinical database after the day, created from the
   same `schema.sql`.
-- `errors.jsonl`: the dead-letter file after the day.
+- `errors.jsonl`: the dead-letter file after the day (empty: nothing was
+  rejected that day).
 
-`ingest_log.received_at`, `errors.jsonl.received_at` and ACK MSH-7 are wall
-clock values from the day of the capture and are not expected to match. Every
-other byte and row is.
+`ingest_log.received_at` and ACK MSH-7 are wall clock values from the day of
+the capture and are not expected to match. Every other byte and row is. The
+capture is an ordinary day: it does not exercise the error paths, the
+out-of-order cases, merges, or the conditions of Section 10. It is a
+regression check, not a definition; this document is the definition.

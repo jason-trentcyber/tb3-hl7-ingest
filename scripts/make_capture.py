@@ -74,13 +74,12 @@ def main():
             time.sleep(0.1)
 
     g = gen.Gen(CAPTURE_SEED)
-    frames = g.clean(400) + g.cruxes()
+    frames = g.clean(400)  # a normal day: no adversarial traffic; the spec is complete and is the contract
 
-    # Same grouping as the verifier: one connection per "conn" group, cruxes sequential last.
+    # Same grouping as the verifier: one connection per "conn" group.
     groups: dict = {}
     for i, (b, h) in enumerate(frames):
-        key = "zz-sequential" if h.get("tag", "").startswith("C") else h.get("conn", "default")
-        groups.setdefault(key, []).append((b, h.get("tag", f"bulk-{i}")))
+        groups.setdefault(h.get("conn", "default"), []).append((b, h.get("tag", f"bulk-{i}")))
 
     conns = {}
     lock = threading.Lock()
@@ -105,14 +104,11 @@ def main():
 
     threads = []
     for n, (name, items) in enumerate(sorted(groups.items())):
-        if name == "zz-sequential":
-            continue
         t = threading.Thread(target=worker, args=(name, items, CAPTURE_SEED + n))
         threads.append(t)
         t.start()
     for t in threads:
         t.join()
-    worker("zz-sequential", groups["zz-sequential"], CAPTURE_SEED + 99)
     mc.Conn = orig  # type: ignore[misc]
     time.sleep(0.3)
     proc.kill()
@@ -121,7 +117,7 @@ def main():
     if os.path.isdir(OUT):
         shutil.rmtree(OUT)
     os.makedirs(os.path.join(OUT, "feed"))
-    names = {"MERCY": "conn-01-mercy", "SLH": "conn-02-stluke", "RVW": "conn-03-riverview", "zz-sequential": "conn-04-replay"}
+    names = {"MERCY": "conn-01-mercy", "SLH": "conn-02-stluke", "RVW": "conn-03-riverview"}
     for key, c in conns.items():
         base = os.path.join(OUT, "feed", names.get(key, key))
         with open(base + ".inbound.mllp", "wb") as f:
@@ -138,14 +134,17 @@ def main():
     src.close()
     dst.execute("VACUUM")
     dst.close()
-    shutil.copy(dlq, os.path.join(OUT, "errors.jsonl"))
+    if os.path.exists(dlq):
+        shutil.copy(dlq, os.path.join(OUT, "errors.jsonl"))
+    else:
+        open(os.path.join(OUT, "errors.jsonl"), "wb").close()  # a clean day: nothing dead-lettered
 
     conn = sqlite3.connect(os.path.join(OUT, "reference.db"))
     counts = {t: conn.execute(f"SELECT COUNT(*) FROM {t}").fetchone()[0] for t in ("patients", "patient_identifiers", "encounters", "observations", "ingest_log")}
     print(f"seed {CAPTURE_SEED}: {len(frames)} frames over {len(conns)} connections")
     print("rows:", counts)
     print("outcomes:", dict(conn.execute("SELECT outcome, COUNT(*) FROM ingest_log GROUP BY outcome").fetchall()))
-    print("dlq lines:", sum(1 for _ in open(dlq)))
+    print("dlq lines:", sum(1 for _ in open(os.path.join(OUT, "errors.jsonl"))))
     print("written to", OUT)
 
 
