@@ -2,8 +2,9 @@
 
 # What makes a task hard for the current frontier: a study of the TB3 leaderboard
 
-Four versions of `hl7-feed-recovery` were each solved on the first attempt by both
-gpt-6-astra (Codex, xhigh) and claude-fable-5-1 (Claude Code, max). See `TRIALS.md`.
+Four versions of `hl7-feed-recovery` were each solved on the first attempt by
+gpt-6-astra (Codex, xhigh) and by claude-fable-5-1 (Claude Code, max) on every version
+it ran (v3, v4). See `TRIALS.md`.
 Rather than guess a fifth time, this document looks at the tasks these models actually
 fail, and extracts what they have in common.
 
