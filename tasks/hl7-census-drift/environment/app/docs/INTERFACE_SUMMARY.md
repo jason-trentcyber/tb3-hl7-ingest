@@ -28,6 +28,9 @@ Database. SQLite, schema in `schema.sql`: patients, patient_identifiers, encount
 (one per visit number per site; admit_time, discharge_time), observations (one per
 order + observation id + sub-id), ingest_log (one row per message with outcome
 ACCEPTED / DUPLICATE / REJECTED / ERROR). All stored times are UTC, ISO 8601 with Z.
+Numeric (NM) results are stored in canonical form as defined by the standard's NM
+data type: no leading zeros, no insignificant trailing zeros after the decimal
+point, so 01.20 and 1.2 both store as 1.2 and 14.0 stores as 14.
 
 Reports. `/app/reports/reports.py <db> <out_dir>` writes census.csv, discharges.csv,
 labs.csv and identity.csv for the reporting window. The reports are owned by
