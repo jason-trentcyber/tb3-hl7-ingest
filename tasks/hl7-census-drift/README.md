@@ -59,11 +59,11 @@ does not help; the daemon has to be correct in general.
 
 ## Relevant experience
 
-I spent years building and operating HL7 v2 integrations for healthcare SaaS.
-Every defect planted here is one I have seen in production or caused myself:
-stripping the offset off a timestamp, assuming the first PID-3 repetition is the
-MRN, treating `~` as a literal, "cleaning" a numeric value by removing
-non-digits, ignoring A40 because the EMPI "handles merges", and assuming message
-control ids are globally unique when every engine numbers its own. The memo is
-modelled on the kind of email a house supervisor actually sends: concrete
-examples, floor-level language, and an admission that it is not the whole list.
+My HL7 experience is from the integration-engine side (Mirth channels, routing,
+mapping) in healthcare SaaS, plus years of being the person downstream reports
+were escalated to when they went wrong. The defects planted here are the standard
+ways HL7 v2 parsers fail, not a list I personally debugged; the parts I can vouch
+for from experience are the shape of the failure as it surfaces (a census that is
+wrong at midnight, a lab value ten times too large, a merge that never landed)
+and the way a house supervisor writes it up: concrete examples, floor-level
+language, and an admission that the list is incomplete.

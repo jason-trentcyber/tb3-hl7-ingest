@@ -91,10 +91,13 @@ and every result are in `TRIALS.md`.
 
 ## About the author
 
-Jason Trent spent years building and operating HL7 integrations for healthcare
-software before moving into architecture and security. Every defect planted in
-these tasks is one he has met in production. The task was designed and built with
-extensive use of AI coding agents, as the assignment encouraged; the judgment
-about what makes a feed go wrong in a real hospital is his.
+Jason Trent is an architect with a background in healthcare SaaS and security. His
+hands-on HL7 work was integration-engine plumbing in Mirth, not daemon internals;
+what he brought here is knowing how these feeds break in practice and how the
+people downstream of them talk about it. The task was designed and built with
+extensive use of AI coding agents, as the assignment encouraged. The planted
+defects were chosen from the well-known ways HL7 parsers go wrong; the judgment
+about which ones a floor would notice, and how a house supervisor would describe
+them, is his.
 
 Contact: jason@jtrent.dev · [jtrent.dev](https://jtrent.dev)
