@@ -193,6 +193,7 @@ class Week:
         visit = f"V{self.r.randint(10000000, 99999999)}"
         admit_local = local_t - timedelta(minutes=self.r.randint(2, 25))
         e = Encounter(p, visit, cls, self.loc(), self.att(), admit_local)
+        e.last_t = local_t  # no activity for this visit may be stamped before the message that creates it
         self.open.append(e)
         trig = "A01" if cls == "I" else "A04"
         m, _ = self.msh(fi, f"ADT^{trig}", local_t)
