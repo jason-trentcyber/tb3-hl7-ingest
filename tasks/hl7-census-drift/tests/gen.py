@@ -80,12 +80,13 @@ class Patient:
 
 
 class Encounter:
-    __slots__ = ("p", "visit", "cls", "loc", "att", "admit", "discharged", "filler_n")
+    __slots__ = ("p", "visit", "cls", "loc", "att", "admit", "discharged", "filler_n", "last_t")
 
     def __init__(self, p, visit, cls, loc, att, admit):
         self.p, self.visit, self.cls, self.loc, self.att, self.admit = p, visit, cls, loc, att, admit
         self.discharged = False
         self.filler_n = 0
+        self.last_t = admit
 
 
 class Week:
@@ -295,9 +296,13 @@ class Week:
                 else:
                     out.extend(self.ev_merge(fi, local_t))
                 # For every admission, drive some activity on existing encounters at this facility.
+                # Activity timestamps strictly increase per encounter so the event order an agent
+                # infers from EVN-2 and the arrival order never disagree (that is a separate defect
+                # we do not plant; see A08-before-A01 in ev_admit for the one we do).
                 mine = [e for e in self.open if e.p.fi == fi]
                 for e in self.r.sample(mine, min(len(mine), self.r.randint(1, 3))):
-                    t = local_t + timedelta(minutes=self.r.randint(1, 50))
+                    t = max(local_t + timedelta(minutes=self.r.randint(1, 50)), e.last_t + timedelta(minutes=1))
+                    e.last_t = t
                     stay_h = (t - e.admit).total_seconds() / 3600
                     k = self.r.random()
                     if k < 0.40:
