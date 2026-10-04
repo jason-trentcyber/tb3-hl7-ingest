@@ -276,13 +276,12 @@ class Week:
         survivor, prior = self.r.sample(self.r.choice(dups), 2)
         prior.merged_into = survivor
         for e in self.open:
-            if e.p is survivor:
-                e.alias = None  # the survivor's MRG slot is about to be replaced; stop sending the older alias
-            elif e.p is prior:
+            if e.p is prior:
                 e.p = survivor
-                e.alias = None
-                if self.r.random() < 0.7:
+                if e.alias is None and self.r.random() < 0.7:
                     # The LIS and the bed board keep the visit under the old MRN for a while.
+                    # A visit already being sent under an earlier retired MRN keeps that one,
+                    # so chained merges see traffic under the oldest alias too.
                     e.alias = (prior.mrn, local_t + timedelta(hours=self.r.uniform(3, 30)))
         m, _ = self.msh(fi, "ADT^A40", local_t)
         auth = FACS[fi][1]

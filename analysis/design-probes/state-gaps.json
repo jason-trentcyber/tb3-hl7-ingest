@@ -1,0 +1,146 @@
+{
+  "coverage_definitions": {
+    "observation_key": [
+      "sending_facility",
+      "filler_order_number",
+      "observation_id",
+      "sub_id"
+    ],
+    "repeated_key": "same observation key occurs in at least two distinct ORU messages",
+    "timestamp_offsets": "explicit offsets on full 14-digit timestamps in all frames",
+    "unique_oru": "ORU frame bodies deduplicated byte-for-byte"
+  },
+  "generator_coverage": [
+    {
+      "distinct_observation_keys": 1174,
+      "keys_repeated_across_unique_oru_messages": 0,
+      "messages": 1444,
+      "observations_in_unique_oru_messages": 1174,
+      "oru_messages": 449,
+      "oru_retransmits": 11,
+      "result_status_counts": {
+        "F": 1174
+      },
+      "seed": 10007,
+      "timestamp_offsets": [
+        "+0000"
+      ],
+      "unique_oru_messages": 438
+    },
+    {
+      "distinct_observation_keys": 1232,
+      "keys_repeated_across_unique_oru_messages": 0,
+      "messages": 1515,
+      "observations_in_unique_oru_messages": 1232,
+      "oru_messages": 461,
+      "oru_retransmits": 3,
+      "result_status_counts": {
+        "F": 1232
+      },
+      "seed": 20011,
+      "timestamp_offsets": [
+        "+0000"
+      ],
+      "unique_oru_messages": 458
+    },
+    {
+      "distinct_observation_keys": 1098,
+      "keys_repeated_across_unique_oru_messages": 0,
+      "messages": 1462,
+      "observations_in_unique_oru_messages": 1098,
+      "oru_messages": 426,
+      "oru_retransmits": 11,
+      "result_status_counts": {
+        "F": 1098
+      },
+      "seed": 30013,
+      "timestamp_offsets": [
+        "+0000"
+      ],
+      "unique_oru_messages": 415
+    }
+  ],
+  "reference_merge_probe": {
+    "after_chain": {
+      "aliases": [
+        {
+          "prior": "B",
+          "survivor": "C"
+        }
+      ],
+      "observations": [],
+      "patients": [
+        "C"
+      ]
+    },
+    "after_late_result": {
+      "aliases": [
+        {
+          "prior": "B",
+          "survivor": "C"
+        }
+      ],
+      "observations": [
+        {
+          "mrn": "A",
+          "order": "LATE-A",
+          "value": "13.2"
+        }
+      ],
+      "patients": [
+        "A",
+        "C"
+      ]
+    },
+    "classification": "uncovered compatibility limitation, not a failed current contract",
+    "contract_note": "The current schema stores one MRG alias per survivor and authority. The generator stops using the older alias when that survivor merges again. A task requiring full lineage needs an explicit contract and storage allowance.",
+    "events": [
+      {
+        "ack": "AA",
+        "control_id": "admit-A",
+        "event": "admit A",
+        "input_hl7": "MSH|^~\\&|ADT1|MERCYGEN|INGEST|REGIONAL|20260309120000+0000||ADT^A01|admit-A|P|2.5.1\rPID|1||A^^^MERCY^MR||Smith^Alex||19800101|O\rPV1|1|I|MED3||||||||||||||||V-A|||||||||||||||||||||||||20260309060000+0000|\r",
+        "reason": ""
+      },
+      {
+        "ack": "AA",
+        "control_id": "admit-B",
+        "event": "admit B",
+        "input_hl7": "MSH|^~\\&|ADT1|MERCYGEN|INGEST|REGIONAL|20260309120000+0000||ADT^A01|admit-B|P|2.5.1\rPID|1||B^^^MERCY^MR||Smith^Alex||19800101|O\rPV1|1|I|MED3||||||||||||||||V-B|||||||||||||||||||||||||20260309060000+0000|\r",
+        "reason": ""
+      },
+      {
+        "ack": "AA",
+        "control_id": "admit-C",
+        "event": "admit C",
+        "input_hl7": "MSH|^~\\&|ADT1|MERCYGEN|INGEST|REGIONAL|20260309120000+0000||ADT^A01|admit-C|P|2.5.1\rPID|1||C^^^MERCY^MR||Smith^Alex||19800101|O\rPV1|1|I|MED3||||||||||||||||V-C|||||||||||||||||||||||||20260309060000+0000|\r",
+        "reason": ""
+      },
+      {
+        "ack": "AA",
+        "control_id": "merge-A-B",
+        "event": "merge A -> B",
+        "input_hl7": "MSH|^~\\&|ADT1|MERCYGEN|INGEST|REGIONAL|20260309120000+0000||ADT^A40|merge-A-B|P|2.5.1\rPID|1||B^^^MERCY^MR||Smith^Alex||19800101|O\rMRG|A^^^MERCY^MR\r",
+        "reason": ""
+      },
+      {
+        "ack": "AA",
+        "control_id": "merge-B-C",
+        "event": "merge B -> C",
+        "input_hl7": "MSH|^~\\&|ADT1|MERCYGEN|INGEST|REGIONAL|20260309120000+0000||ADT^A40|merge-B-C|P|2.5.1\rPID|1||C^^^MERCY^MR||Smith^Alex||19800101|O\rMRG|B^^^MERCY^MR\r",
+        "reason": ""
+      },
+      {
+        "ack": "AA",
+        "control_id": "late-lab-A",
+        "event": "delayed result under A",
+        "input_hl7": "MSH|^~\\&|ADT1|MERCYGEN|INGEST|REGIONAL|20260309120000+0000||ORU^R01|late-lab-A|P|2.5.1\rPID|1||A^^^MERCY^MR||Smith^Alex||19800101|O\rPV1|1|I|MED3||||||||||||||||V-A|||||||||||||||||||||||||20260309060000+0000|\rOBR|1||LATE-A^LIS|CBC^CBC|||20260309090000+0000\rOBX|1|NM|718-7^HGB^LN||13.2|g/dL|||||F\r",
+        "reason": ""
+      }
+    ],
+    "resolve_A_after_chain": "A",
+    "retired_identity_recreated": true
+  },
+  "task": "hl7-census-drift",
+  "traffic_start": "2026-04-13"
+}

@@ -21,6 +21,13 @@ CREATE TABLE IF NOT EXISTS patient_identifiers (
     PRIMARY KEY (mrn_authority, mrn, id_authority, id_type)
 );
 
+CREATE TABLE IF NOT EXISTS patient_aliases (
+    mrn_authority TEXT NOT NULL,
+    alias_mrn     TEXT NOT NULL,
+    mrn           TEXT NOT NULL,
+    PRIMARY KEY (mrn_authority, alias_mrn)
+);
+
 CREATE TABLE IF NOT EXISTS encounters (
     mrn_authority  TEXT NOT NULL,
     mrn            TEXT NOT NULL,

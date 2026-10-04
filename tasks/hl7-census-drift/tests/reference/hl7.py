@@ -470,18 +470,13 @@ class Processor:
         return None
 
     def _resolve_alias(self, mrn_auth, mrn):
-        """Spec 5.7.3: follow MRG alias rows until an existing patient or a non-alias."""
-        for _ in range(16):
-            if self.conn.execute("SELECT 1 FROM patients WHERE mrn_authority=? AND mrn=?", (mrn_auth, mrn)).fetchone():
-                return mrn
-            row = self.conn.execute(
-                "SELECT mrn FROM patient_identifiers WHERE mrn_authority=? AND id_authority=? AND id_type='MRG' AND id_value=?",
-                (mrn_auth, mrn_auth, mrn),
-            ).fetchone()
-            if row is None:
-                return mrn
-            mrn = row[0]
-        raise HL7Error("BAD_VALUE")
+        """Spec 5.7.3: a retired MRN resolves to the patient it was merged into, however many merges ago."""
+        if self.conn.execute("SELECT 1 FROM patients WHERE mrn_authority=? AND mrn=?", (mrn_auth, mrn)).fetchone():
+            return mrn
+        row = self.conn.execute(
+            "SELECT mrn FROM patient_aliases WHERE mrn_authority=? AND alias_mrn=?", (mrn_auth, mrn)
+        ).fetchone()
+        return row[0] if row else mrn
 
     def _merge(self, mrn_auth, prior, survivor, mt):
         """Spec 5.7.1 steps 2-5 (step 1 is _upsert_patient)."""
@@ -501,6 +496,13 @@ class Processor:
             (mrn_auth, survivor, mrn_auth, prior),
         )
         c.execute("DELETE FROM patients WHERE mrn_authority=? AND mrn=?", (mrn_auth, prior))
+        # Aliases: everything that resolved to prior now resolves to survivor, and prior itself is an alias.
+        c.execute("UPDATE patient_aliases SET mrn=? WHERE mrn_authority=? AND mrn=?", (survivor, mrn_auth, prior))
+        c.execute(
+            "INSERT INTO patient_aliases (mrn_authority, alias_mrn, mrn) VALUES (?,?,?) "
+            "ON CONFLICT(mrn_authority, alias_mrn) DO UPDATE SET mrn=excluded.mrn",
+            (mrn_auth, prior, survivor),
+        )
 
     def _upsert_patient(self, mrn_auth, mrn, mtype, mt, **fields):
         row = self.conn.execute(

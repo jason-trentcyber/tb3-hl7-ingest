@@ -50,7 +50,9 @@ def planted_week():
     segs = [m, w.evn("A03", dis_local, dis_local - timedelta(minutes=12), 1), w.pid(p), w.pv1(e, e.admit, None)]
     fr.append((w.frame(1, segs), 1, w.to_utc(1, dis_local)))
     # --- Mercy merge Wednesday: 309114 merged into 287740, labs under 309114 before the merge
-    surv = gen.Patient(0, "287740", "Okafor", "Grace", date(1979, 11, 23), "F", "412009876", None)
+    # No SSN on the survivor: where the SSN lands in PID-3 is random, and when it lands first the broken
+    # daemon files the survivor under the SSN, so 287740 would not appear on the reports the memo quotes.
+    surv = gen.Patient(0, "287740", "Okafor", "Grace", date(1979, 11, 23), "F", None, None)
     prior = gen.Patient(0, "309114", "Okafor", "Grace", date(1979, 11, 23), "F", None, "44120")
     for q in (surv, prior):
         w.used_mrn.add((0, q.mrn))

@@ -13,8 +13,8 @@ report scripts themselves have not changed since January; the numbers went bad w
 the feed daemon was redeployed on the 8th.
 
 1. The midnight census is wrong at all three sites. Monday night it listed 59
-   inpatients across the region; the charge nurses' manual count was 72. By Friday
-   the total had drifted back to 203, which matched the nurses' count, but the
+   inpatients across the region; the charge nurses' manual count was 71. By Friday
+   the total had drifted back to 201, which matched the nurses' count, but the
    names did not: patients who were discharged earlier that day are still listed,
    and patients who were admitted that evening are missing. A census that adds up
    is not the same as a census that is right. One I can vouch for personally:

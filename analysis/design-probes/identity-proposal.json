@@ -1,0 +1,78 @@
+{
+  "cross_authority_order_checks_passed": 2,
+  "golden_checkpoints_passed": 10,
+  "mutations": {
+    "clear_component": {
+      "failing_checkpoints": [
+        8,
+        9,
+        12,
+        13,
+        16,
+        17,
+        19
+      ],
+      "passes_final_checkpoint": false
+    },
+    "destructive_rekey": {
+      "failing_checkpoints": [
+        6,
+        7,
+        8,
+        9,
+        12,
+        13,
+        16,
+        17,
+        19
+      ],
+      "passes_final_checkpoint": false
+    },
+    "global_event_ids": {
+      "failing_checkpoints": [
+        9,
+        12,
+        13,
+        16,
+        17,
+        19
+      ],
+      "passes_final_checkpoint": false
+    },
+    "irreversible_union": {
+      "failing_checkpoints": [
+        8,
+        9,
+        13,
+        17
+      ],
+      "passes_final_checkpoint": true
+    },
+    "last_arrival_wins": {
+      "failing_checkpoints": [
+        7,
+        8,
+        9,
+        12,
+        13,
+        16,
+        17,
+        19
+      ],
+      "passes_final_checkpoint": false
+    },
+    "revoke_pair": {
+      "failing_checkpoints": [
+        12
+      ],
+      "passes_final_checkpoint": true
+    }
+  },
+  "scope": "semantic design experiment; not a daemon, oracle validation, or agent trial",
+  "unvalidated": [
+    "SQLite recovery and atomicity",
+    "process restarts",
+    "verifier isolation",
+    "frontier-model difficulty"
+  ]
+}
