@@ -25,7 +25,7 @@ CAPTURE_SEED = 20260309
 VT, FS, CR = b"\x0b", b"\x1c", b"\x0d"
 CAP = os.path.join(TASK, "environment", "app", "capture")
 BROKEN = os.path.join(TASK, "environment", "app", "ingest")
-REPORTS = os.path.join(TASK, "environment", "app", "reports", "reports.py")
+REPORTS = os.path.join(TASK, "tests", "reference", "reports.py")  # full pack: the capture includes Finance's and HIM's reports
 
 
 def planted_week():

@@ -34,7 +34,8 @@ import run_week  # noqa: E402
 
 AGENT_INGEST = "/app/ingest"
 REF_INGEST = os.path.join(HERE, "reference")
-REPORTS = os.path.join(HERE, "reference", "reports.py")  # baked copy; agent's copy is checked against it
+REPORTS = os.path.join(HERE, "reference", "reports.py")  # full four-report pack (Finance's and HIM's scripts included)
+AGENT_REPORTS = os.path.join(HERE, "reference", "reports_agent.py")  # the two-report pack shipped in /app/reports
 
 SEED = int(os.environ.get("HL7_VERIFY_SEED", str(random.SystemRandom().randint(10_000, 99_999))))
 START = date(2026, 4, 13)  # a different week from the capture
@@ -113,7 +114,7 @@ def test_reports_script_unmodified():
     agent_copy = "/app/reports/reports.py"
     if not os.path.exists(agent_copy):
         pytest.skip("agent's /app/reports not collected; verifier used its own copy")
-    assert sha(agent_copy) == sha(REPORTS), "/app/reports/reports.py was modified; fix the feed, not the reports"
+    assert sha(agent_copy) == sha(AGENT_REPORTS), "/app/reports/reports.py was modified; fix the feed, not the reports"
 
 
 def test_schema_and_config_unmodified():

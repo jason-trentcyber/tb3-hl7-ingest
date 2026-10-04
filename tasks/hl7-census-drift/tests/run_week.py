@@ -26,9 +26,9 @@ sys.path.insert(0, HERE)
 import gen  # noqa: E402
 import mllp_client as mc  # noqa: E402
 
-REPORTS = os.environ.get("HL7_REPORTS", "/app/reports/reports.py")
+REPORTS = os.environ.get("HL7_REPORTS", os.path.join(HERE, "reference", "reports.py"))
 if not os.path.exists(REPORTS):
-    REPORTS = os.path.join(HERE, "..", "environment", "app", "reports", "reports.py")
+    REPORTS = "/app/reports/reports.py"
 
 
 def free_port():

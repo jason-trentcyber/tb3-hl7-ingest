@@ -32,9 +32,10 @@ Numeric (NM) results are stored in canonical form as defined by the standard's N
 data type: no leading zeros, no insignificant trailing zeros after the decimal
 point, so 01.20 and 1.2 both store as 1.2 and 14.0 stores as 14.
 
-Reports. `/app/reports/reports.py <db> <out_dir>` writes census.csv, discharges.csv,
-labs.csv and identity.csv for the reporting window. The reports are owned by
-Clinical Reporting and are considered correct.
+Reports. `/app/reports/reports.py <db> <out_dir>` writes census.csv and labs.csv for
+the reporting window; it is owned by Clinical Reporting. Finance (discharges.csv) and
+HIM (identity.csv) run their own scripts against the same database. All four are
+considered correct.
 
 Durability. A message is ACKed only after its effects are committed. Rejected or
 errored messages are appended to the dead-letter file (`HL7_DLQ`) as JSON lines.

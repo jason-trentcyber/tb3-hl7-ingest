@@ -19,7 +19,7 @@ import run_week  # noqa: E402
 
 VT, FS, CR = b"\x0b", b"\x1c", b"\x0d"
 CAP = os.path.join(TASK, "environment", "app", "capture")
-REPORTS = os.path.join(TASK, "environment", "app", "reports", "reports.py")
+REPORTS = os.path.join(TASK, "tests", "reference", "reports.py")
 
 
 def frames(data):

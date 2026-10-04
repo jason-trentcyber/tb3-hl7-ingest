@@ -72,26 +72,29 @@ def fmt_num(v: float, places: int) -> str:
 
 
 class Patient:
-    __slots__ = ("fi", "mrn", "family", "given", "dob", "sex", "ssn", "pi", "merged_into")
+    __slots__ = ("fi", "mrn", "family", "given", "dob", "sex", "ssn", "pi", "merged_into", "person")
 
-    def __init__(self, fi, mrn, family, given, dob, sex, ssn, pi):
+    def __init__(self, fi, mrn, family, given, dob, sex, ssn, pi, person=None):
         self.fi, self.mrn, self.family, self.given, self.dob, self.sex, self.ssn, self.pi = fi, mrn, family, given, dob, sex, ssn, pi
         self.merged_into = None
+        self.person = person if person is not None else id(self)  # duplicate registrations share a person
 
 
 class Encounter:
-    __slots__ = ("p", "visit", "cls", "loc", "att", "admit", "discharged", "filler_n", "last_t")
+    __slots__ = ("p", "visit", "cls", "loc", "att", "admit", "discharged", "filler_n", "last_t", "alias")
 
     def __init__(self, p, visit, cls, loc, att, admit):
         self.p, self.visit, self.cls, self.loc, self.att, self.admit = p, visit, cls, loc, att, admit
         self.discharged = False
         self.filler_n = 0
         self.last_t = admit
+        self.alias = None  # (prior_mrn, until_local): engine still sends the retired MRN after a merge
 
 
 class Week:
     def __init__(self, seed: int, start: date):
         self.r = random.Random(seed)
+        self.cur_t = None
         self.start = start
         self.ctrl = dict(CTRL_BASE)
         self.used_mrn: set[tuple[int, str]] = set()
@@ -133,6 +136,14 @@ class Week:
             if (fi, mrn) not in self.used_mrn:
                 self.used_mrn.add((fi, mrn))
                 break
+        existing = [q for q in self.patients if q.fi == fi and q.merged_into is None]
+        if existing and self.r.random() < 0.2:
+            # Registration misses an existing record and opens a duplicate for the same person
+            # (same name, birth date, sex, SSN; no PI). Registration finds and merges these later.
+            src = self.r.choice(existing)
+            p = Patient(fi, mrn, src.family, src.given, src.dob, src.sex, src.ssn, None, person=src.person)
+            self.patients.append(p)
+            return p
         dob = date(self.r.randint(1930, 2012), self.r.randint(1, 12), self.r.randint(1, 28))
         ssn = f"{self.r.randint(100000000, 899999999)}" if self.r.random() < 0.7 else None
         pi = f"{self.r.randint(10000, 99999)}" if self.r.random() < 0.3 else None
@@ -140,9 +151,12 @@ class Week:
         self.patients.append(p)
         return p
 
-    def pid(self, p: Patient) -> str:
+    def pid(self, p: Patient, e: "Encounter | None" = None) -> str:
         auth = FACS[p.fi][1]
-        ids = [f"{p.mrn}^^^{auth}^MR"]
+        mrn = p.mrn
+        if e is not None and e.alias and self.cur_t is not None and self.cur_t < e.alias[1]:
+            mrn = e.alias[0]  # the visit's account was opened under the prior MRN; the engine lags the merge
+        ids = [f"{mrn}^^^{auth}^MR"]
         if p.ssn:
             # Epic and Cerner put the SSN first; the MRN is not always the first repetition.
             if self.r.random() < 0.55:
@@ -199,7 +213,7 @@ class Week:
         if self.r.random() < 0.15 and e.cls == "E":
             e.cls = "I"  # ED patient admitted to the floor: class changes on the A08
         m, _ = self.msh(fi, "ADT^A08", local_t)
-        segs = [m, self.evn("A08", local_t, local_t, fi), self.pid(e.p), self.pv1(e, e.admit if self.r.random() < 0.5 else None, None)]
+        segs = [m, self.evn("A08", local_t, local_t, fi), self.pid(e.p, e), self.pv1(e, e.admit if self.r.random() < 0.5 else None, None)]
         return [(self.frame(fi, segs), fi, self.to_utc(fi, local_t))]
 
     def ev_discharge(self, e: Encounter, local_t: datetime):
@@ -210,7 +224,7 @@ class Week:
         m, _ = self.msh(fi, "ADT^A03", local_t)
         # Half the engines populate PV1-45; the others carry the discharge time only in EVN-6.
         pv45 = disch_local if self.r.random() < 0.5 else None
-        segs = [m, self.evn("A03", local_t, disch_local, fi), self.pid(e.p), self.pv1(e, e.admit, pv45)]
+        segs = [m, self.evn("A03", local_t, disch_local, fi), self.pid(e.p, e), self.pv1(e, e.admit, pv45)]
         return [(self.frame(fi, segs), fi, self.to_utc(fi, local_t))]
 
     def ev_oru(self, e: Encounter, local_t: datetime):
@@ -219,7 +233,7 @@ class Week:
         filler = f"LAB{self.lab_seq}"
         collected = local_t - timedelta(minutes=self.r.randint(20, 240))
         m, _ = self.msh(fi, "ORU^R01", local_t)
-        segs = [m, self.pid(e.p), self.pv1(e, None, None)]
+        segs = [m, self.pid(e.p, e), self.pv1(e, None, None)]
         panel = self.r.choice(["CBC^CBC", "BMP^BMP", "UA^UA", "GTT^GTT", "BCX^BLOOD CULTURE"])
         segs.append(f"OBR|1||{filler}^LIS|{panel}|||{self.ts(fi, collected)}")
         n = 0
@@ -249,15 +263,27 @@ class Week:
         return [(self.frame(fi, segs), fi, self.to_utc(fi, local_t))]
 
     def ev_merge(self, fi: int, local_t: datetime):
-        """Registration discovers a duplicate: prior MRN merged into survivor."""
-        cands = [p for p in self.patients if p.fi == fi and p.merged_into is None]
-        if len(cands) < 2:
+        """Registration discovers a duplicate: prior MRN merged into survivor. Only records for the
+        same person are ever merged. A person registered three times can be merged twice in a week,
+        and the second merge may retire the first merge's survivor (A->B, then B->C)."""
+        groups: dict = {}
+        for p in self.patients:
+            if p.fi == fi and p.merged_into is None:
+                groups.setdefault(p.person, []).append(p)
+        dups = [g for g in groups.values() if len(g) >= 2]
+        if not dups:
             return []
-        survivor, prior = self.r.sample(cands, 2)
+        survivor, prior = self.r.sample(self.r.choice(dups), 2)
         prior.merged_into = survivor
         for e in self.open:
-            if e.p is prior:
+            if e.p is survivor:
+                e.alias = None  # the survivor's MRG slot is about to be replaced; stop sending the older alias
+            elif e.p is prior:
                 e.p = survivor
+                e.alias = None
+                if self.r.random() < 0.7:
+                    # The LIS and the bed board keep the visit under the old MRN for a while.
+                    e.alias = (prior.mrn, local_t + timedelta(hours=self.r.uniform(3, 30)))
         m, _ = self.msh(fi, "ADT^A40", local_t)
         auth = FACS[fi][1]
         segs = [m, self.evn("A40", local_t, local_t, fi), self.pid(survivor), f"MRG|{prior.mrn}^^^{auth}^MR"]
@@ -290,6 +316,7 @@ class Week:
                     events.append(("merge", fi, day0 + timedelta(minutes=self.r.randint(480, 1080))))
             events.sort(key=lambda x: x[2])
             for kind, fi, local_t in events:
+                self.cur_t = local_t
                 if kind == "admit":
                     frames, e = self.ev_admit(fi, local_t)
                     out.extend(frames)
@@ -303,6 +330,7 @@ class Week:
                 for e in self.r.sample(mine, min(len(mine), self.r.randint(1, 3))):
                     t = max(local_t + timedelta(minutes=self.r.randint(1, 50)), e.last_t + timedelta(minutes=1))
                     e.last_t = t
+                    self.cur_t = t
                     stay_h = (t - e.admit).total_seconds() / 3600
                     k = self.r.random()
                     if k < 0.40:
