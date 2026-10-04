@@ -33,7 +33,7 @@ def planted_week():
     frames = w.generate()
     # --- Kowalski, Ingrid, MRN 416502 at St Luke's: admitted Monday, discharged Tuesday
     # afternoon with the discharge time only in EVN-6 (no PV1-45).
-    p = gen.Patient(1, "416502", "Kowalski", "Ingrid", date(1961, 8, 4), "F", "521440187", None)
+    p = gen.Patient(1, "416502", "Kowalski", "Ingrid", date(1961, 8, 4), "F", None, None)
     w.used_mrn.add((1, "416502"))
     w.patients.append(p)
     adm_local = datetime(2026, 3, 9, 7, 12)

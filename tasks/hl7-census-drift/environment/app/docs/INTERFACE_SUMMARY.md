@@ -20,6 +20,9 @@ ORU^R01 results. Anything else is rejected with AR / UNSUPPORTED_TYPE.
 Patient identity. The patient's MRN for the sending site is the PID-3 identifier
 whose assigning authority (component 4) is the site's MRN authority and whose type
 (component 5) is MR. Other identifiers (SSN, PI) are stored in patient_identifiers.
+After an A40 merge the prior MRN is retained on the surviving patient as a row in
+patient_identifiers with id_authority = the site's MRN authority and id_type = MRG,
+so that the identity report can show which records were combined.
 
 Database. SQLite, schema in `schema.sql`: patients, patient_identifiers, encounters
 (one per visit number per site; admit_time, discharge_time), observations (one per

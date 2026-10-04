@@ -187,7 +187,6 @@ class Week:
             # The ADT and bed-management queues are separate; a bed move recorded seconds after
             # the admission sometimes reaches the feed before the admission itself.
             t2 = local_t + timedelta(seconds=self.r.randint(20, 90))
-            e.loc = self.loc()
             m2, _ = self.msh(fi, "ADT^A08", t2)
             segs2 = [m2, self.evn("A08", t2, t2, fi), self.pid(p), self.pv1(e, None, None)]
             frames.append((self.frame(fi, segs2), fi, self.to_utc(fi, local_t) - timedelta(seconds=self.r.randint(2, 15))))
