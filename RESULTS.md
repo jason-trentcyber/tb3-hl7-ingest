@@ -2,7 +2,8 @@
 
 # Results: hl7-census-drift
 
-Final version: **v6.3**, commit `73488bd` (task files unchanged since). Every trial is in
+Final version: **v6.3**, commit `73488bd`. The environment, tests and solution are unchanged
+since then; only the task README was updated afterwards. Every trial is in
 [TRIALS.md](TRIALS.md) with its job directory under `~/tb3/jobs/`.
 
 ## Bottom line
