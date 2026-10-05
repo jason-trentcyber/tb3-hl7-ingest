@@ -1,8 +1,7 @@
 # Design: hl7-feed-recovery
 
-A Terminal-Bench 3 task. Built for the Klavis AI founding-engineer take-home,
-October 2026. Public from the first commit; see the root README for results
-and `TRIALS.md` for every run.
+A Terminal-Bench 3 task, October 2026. Public from the first commit; see the
+root README for results and `TRIALS.md` for every run.
 
 ## The job being simulated
 

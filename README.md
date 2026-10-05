@@ -1,10 +1,10 @@
 # Can an AI fix a hospital's data feed when nobody can tell it what's wrong?
 
-This repository is a take-home submission for Klavis AI's Founding Engineer role.
-The assignment: design one original task for [Terminal-Bench 3](https://www.tbench.ai),
+The goal: design one original task for [Terminal-Bench 3](https://www.tbench.ai),
 a benchmark that measures how well AI coding agents handle realistic engineering
-work, and show that the two strongest agents available today fail it for real
-reasons, not because the task is broken.
+work, that meets its contribution bar: every automated check passes, the two
+strongest agents available today each fail it three times out of three for real
+reasons, not because the task is broken, and neither can cheat its way to a score.
 
 ## The problem in plain language
 
@@ -112,7 +112,7 @@ Jason Trent is a systems and cloud architect and a former full-stack engineer,
 with years in healthcare SaaS and security. He is not an HL7 specialist: his
 hands-on HL7 work was integration-engine plumbing in Mirth. He picked this domain
 because he knows how these feeds fail downstream. The code was written by AI
-coding agents (Claude Code and Codex), as the assignment allowed; he directed the
+coding agents (Claude Code and Codex); he directed the
 design, decided what counted as a fair failure, and verified every result.
 
 Contact: jason@jtrent.dev · [jtrent.dev](https://jtrent.dev)

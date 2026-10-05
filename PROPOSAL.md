@@ -29,10 +29,9 @@ evidence and reconsider the candidate.
 
 ## What the investigation established
 
-The [shared assignment](https://docs.google.com/document/d/1DAAGNM4BZnSLX-FuGmsB4qarO__nm1i4FcKwu9dsKrM/edit)
-requires all checks, six genuine standard-trial failures, and two zero-reward
-adversarial trials. It explicitly makes current TB3 CI authoritative over the
-model names in its examples.
+The target bar requires all checks, six genuine standard-trial failures, and two
+zero-reward adversarial trials. Current TB3 CI is authoritative for the
+model configurations.
 
 Upstream was checked directly against GitHub on October 4. Its main revision and
 the local checkout both resolve to
@@ -237,7 +236,7 @@ than assuming file layout or `python -E -s` provides isolation.
    and reproduce the first decisive wrong checkpoint. A valid difficulty signal
    is a disclosed provenance, connectivity, revision, or transaction error.
    Ambiguity, unsupported setup, refusal, API failure, and timeouts are not it.
-3. If either pilot solves the frozen candidate, it has not met the brief's
+3. If either pilot solves the frozen candidate, it has not met the
    all-fail target. Do not remove evidence, hide policy, or add arbitrary input
    volume to rescue it. Reassess the mechanism before further implementation.
 4. If both fail meaningfully, complete three runs per configuration and one

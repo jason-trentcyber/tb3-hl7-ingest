@@ -37,7 +37,7 @@ Sol was not re-run in standard mode on v6.3. The only change from v6.2 is one do
 sentence about merges, and sol solved v6.2 in 16 minutes (trial 28) and v6 in 28 minutes
 (trial 24).
 
-**Model version note.** The brief names `gpt-6.1-sol`; trials 19–33 ran `openai/gpt-6-sol`.
+**Model version note.** Trials 19–33 ran `openai/gpt-6-sol`; a newer sol model, `openai/gpt-6.1-sol`, is also available.
 A standard and a /cheat trial on `openai/gpt-6.1-sol` against v6.3 are running now (started
 2026-10-05); their results will be added here and in TRIALS.md.
 
