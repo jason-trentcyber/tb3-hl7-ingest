@@ -57,7 +57,7 @@ That is also, not coincidentally, what the job is actually like.
 The hardest part of evaluating an AI agent is not running it. It is deciding,
 when it gets something wrong, whether the agent failed or the task did.
 
-Over seven versions and 33 logged runs against the leading coding agents (Claude
+Over seven versions and 34 logged runs against the leading coding agents (Claude
 Code and Codex at their strongest settings), several runs looked like clean
 failures. Each was traced to its cause. In every case the task relied on a
 convention it never stated: how a merge message names the retired record, how
