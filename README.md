@@ -1,10 +1,22 @@
-# Can an AI fix a hospital's data feed when nobody can tell it what's wrong?
+# HL7 census drift: a realistic debugging environment for AI coding agents
 
-The goal: design one original task for [Terminal-Bench 3](https://www.tbench.ai),
-a benchmark that measures how well AI coding agents handle realistic engineering
-work, that meets its contribution bar: every automated check passes, the two
-strongest agents available today each fail it three times out of three for real
-reasons, not because the task is broken, and neither can cheat its way to a score.
+A [Terminal-Bench 3](https://www.tbench.ai) task, built to evaluate how AI coding
+agents handle the kind of production problem that has no failing test: a hospital
+data feed that quietly writes bad data, and a set of reports that are wrong
+without saying why.
+
+This repository contains three things:
+
+- **The environment.** A broken HL7 feed daemon with nine planted defects, a
+  supervisor's memo describing symptoms, a week of recorded traffic from three
+  hospitals, and the four downstream reports. Traffic is generated, so grading
+  uses a week the agent has never seen.
+- **A grader that can't be gamed.** The agent's code runs as an unprivileged user
+  in a separate container. It cannot read the reference answers or write its own
+  score; this was tested with a deliberately hostile submission.
+- **A method for telling real AI failures from flawed tests.** Every agent run is
+  logged and every failure traced to its cause, with an independent reviewer
+  checking whether the task was fair.
 
 ## The problem in plain language
 
@@ -21,74 +33,57 @@ sign of trouble is a charge nurse counting heads at midnight and getting a
 different number than the report, or a lab value that is ten times too high, or a
 patient who was discharged Tuesday still showing as being on the ward on Friday.
 
-That is the situation we hand to the AI agent. Three hospitals upgraded their
-message engines. The daemon was written for the old ones. A house supervisor has
-sent a memo listing six things the floor has noticed. The reports are correct;
-the daemon is not. The agent has to work out *everything* that is wrong, with
-only the memo, the HL7 standard, and a week of recorded traffic, and fix it so
-that the reports come out right for a week of traffic it has never seen. There
-is no partial credit: the midnight census is either right or it is not.
+That is the situation the agent is given. Three hospitals upgraded their message
+engines. The daemon was written for the old ones. A house supervisor has sent a
+memo listing six things the floor has noticed. The agent has to work out
+*everything* that is wrong, with only the memo, the HL7 standard, and a week of
+recorded traffic, and fix it so the reports come out right for a week of traffic
+it has never seen. There is no partial credit: the midnight census is either right
+or it is not.
 
-## Why this is hard for an AI
+## What it asks of an agent
 
 Most coding tasks come with a definition of done: a failing test, a spec, an
-expected output. AI agents are very good at those. They read the definition,
-work towards it, and check themselves against it until it is satisfied.
-
-Here there is no definition to read. The memo says "here is what we noticed; there
+expected output. Here there is none. The memo says "here is what we noticed; there
 is probably more." The agent has to reason from downstream symptoms ("the census
 is high") back to upstream causes ("the daemon treats a Social Security number as
-a medical record number"), and then keep going after the visible symptoms are
-fixed, because the grading covers things no one on the floor would ever notice.
-It has to decide when it is finished with no test turning green to tell it.
+a medical record number"), keep going after the visible symptoms are fixed, and
+decide when it is finished with no test turning green to tell it.
 
 That is also, not coincidentally, what the job is actually like.
 
-## What we found
+## Real failure or flawed test?
 
-Short version: the task does not meet the bar. On the final version, both
-Claude Code (Opus 5.5) and Codex (sol) solve it. The record of how it got there,
-seven versions and 33 logged trials, is the most useful part of this repository.
-[`RESULTS.md`](RESULTS.md) is the five-minute summary.
+The hardest part of evaluating an AI agent is not running it. It is deciding,
+when it gets something wrong, whether the agent failed or the task did.
 
-Versions 1 through 4 (`tasks/hl7-feed-recovery`) each tried a different way of
-making the problem hard: a dense specification, a reference capture to infer
-behaviour from, HL7 semantics that need domain knowledge, and demanding
-durability and throughput requirements. Both agents solved every one, usually
-by writing their own test suite that mirrored the specification and iterating
-until it passed.
+Over seven versions and 33 logged runs against the leading coding agents (Claude
+Code and Codex at their strongest settings), several runs looked like clean
+failures. Each was traced to its cause. In every case the task relied on a
+convention it never stated: how a merge message names the retired record, how
+numbers should be stored, whether identifiers move to the surviving patient after
+a merge. An independent reviewer, given only what the agent sees, made the same
+choice the agents did. Those runs were not counted as failures; the conventions
+were documented and the task re-run.
 
-Analysing the public Terminal-Bench 3 results (`ANALYSIS.md`) showed what the
-tasks both models score zero on have in common: the agent cannot enumerate what
-it will be graded on. Versions 5 and 6 (`tasks/hl7-census-drift`) were built on
-that pattern, and v6 went further by hiding two of the four report scripts.
-
-What happened is the finding. Every run that looked like a genuine failure
-traced back to a convention the task relied on but never stated: how a merge
-message names the retired record, how numbers are written, whether identifiers
-move to the surviving patient after a merge. An independent reviewer reading
-only what the agent sees made the same "wrong" choice the models did. Once each
-convention was written down, the models passed. They found all nine planted
-defects in every run. Hiding information made the task unfair, not hard; a
-harder task needs more reasoning with everything stated.
-[`PROPOSAL.md`](PROPOSAL.md) sketches one.
-
-Along the way the verifier was hardened so the agent's code runs as an
-unprivileged user and cannot read the answers or write its own score, tested
-with a deliberately hostile submission. Both adversarial (`/cheat`) trials
-scored zero.
+The lesson applies well beyond benchmarks: an agent working from a spec is only as
+reliable as the spec. Once every rule was written down, the agents found all nine
+defects and produced correct reports. The full record, including the runs that
+went against the task, is in [`RESULTS.md`](RESULTS.md) and
+[`TRIALS.md`](TRIALS.md). [`PROPOSAL.md`](PROPOSAL.md) sketches a follow-on task
+designed around that lesson.
 
 ## What is in the repository
 
 | Path | What it is |
 |---|---|
-| `RESULTS.md` | Final-version checks, trials, and failure analysis: start here |
-| `tasks/hl7-census-drift/` | The final task (v5–v6.3): broken daemon, memo, recorded traffic, reports, sandboxed verifier, reference solution |
-| `tasks/hl7-feed-recovery/` | The previous task (v1–v4), complete and solved by both models; kept as the record of what did not work |
+| `RESULTS.md` | Checks, trials, and failure analysis for the final version |
+| `tasks/hl7-census-drift/` | The task: broken daemon, memo, recorded traffic, reports, sandboxed verifier, reference solution |
+| `tasks/hl7-feed-recovery/` | Earlier versions (v1–v4), kept as the record of the design's evolution |
 | `TRIALS.md` | Every agent run, with model, configuration, duration, result and what the agent actually did |
-| `ANALYSIS.md` | Why v1–v4 were solved and what the leaderboard data says about tasks that are not |
+| `ANALYSIS.md` | What the public Terminal-Bench 3 results say about which tasks agents fail |
 | `DESIGN.md`, `tasks/*/DESIGN.md` | Design notes: planted defects, how each is disguised, how the verifier works |
-| `PROPOSAL.md` | A harder sibling task (revocable patient links), proposed and probed, not built |
+| `PROPOSAL.md` | A follow-on task (revocable patient links), proposed and probed, not built |
 | `analysis/` | Independent ambiguity review and design-probe outputs |
 | `scripts/` | Tooling: static checks, trial summariser, capture builder, verifier isolation test |
 
@@ -101,10 +96,11 @@ The task follows the Terminal-Bench 3 layout and runs under
 harbor run -p tasks/hl7-census-drift --agent oracle --env docker --yes    # reference solution, expect 1.0
 harbor run -p tasks/hl7-census-drift --agent nop    --env docker --yes    # do nothing, expect 0.0
 scripts/static_checks.sh tasks/hl7-census-drift                           # the TB3 CI static checks
+scripts/isolation_test.sh                                                 # hostile submission vs. the real verifier image
 ```
 
-Agent trials use the Terminal-Bench 3 CI default configurations; exact commands
-and every result are in `TRIALS.md`.
+Agent trials use the Terminal-Bench 3 CI configurations; exact commands and every
+result are in `TRIALS.md`.
 
 ## About the author
 
@@ -112,7 +108,9 @@ Jason Trent is a systems and cloud architect and a former full-stack engineer,
 with years in healthcare SaaS and security. He is not an HL7 specialist: his
 hands-on HL7 work was integration-engine plumbing in Mirth. He picked this domain
 because he knows how these feeds fail downstream. The code was written by AI
-coding agents (Claude Code and Codex); he directed the
-design, decided what counted as a fair failure, and verified every result.
+coding agents (Claude Code and Codex); he directed the design, decided what
+counted as a fair failure, and verified every result.
 
 Contact: jason@jtrent.dev · [jtrent.dev](https://jtrent.dev)
+
+Licensed under the MIT License (see `LICENSE`).
