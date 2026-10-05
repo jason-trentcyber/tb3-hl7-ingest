@@ -46,34 +46,51 @@ That is also, not coincidentally, what the job is actually like.
 
 ## What we found
 
-Short version: it took five tries to build something that gave either model
-trouble, and the record of those tries is the most useful part of this repository.
+Short version: the task does not meet the bar. On the final version, both
+Claude Code (Opus 5.5) and Codex (sol) solve it. The record of how it got there,
+seven versions and 33 logged trials, is the most useful part of this repository.
+[`RESULTS.md`](RESULTS.md) is the five-minute summary.
 
 Versions 1 through 4 (`tasks/hl7-feed-recovery`) each tried a different way of
 making the problem hard: a dense specification, a reference capture to infer
 behaviour from, HL7 semantics that need domain knowledge, and demanding
-durability and throughput requirements. Both agents solved every one on the
-first attempt, in 20 to 45 minutes, usually by writing their own test suite
-that mirrored the specification and iterating until it passed.
+durability and throughput requirements. Both agents solved every one, usually
+by writing their own test suite that mirrored the specification and iterating
+until it passed.
 
 Analysing the public Terminal-Bench 3 results (`ANALYSIS.md`) showed what the
 tasks both models score zero on have in common: the agent cannot enumerate what
-it will be graded on. Version 5 (`tasks/hl7-census-drift`) was built on that
-pattern. The first agent to attempt it failed; the second solved it in 25
-minutes after an ambiguity in the task was clarified. Work on sharpening the
-task continues, and the trial log (`TRIALS.md`) records every run, including
-the ones that went against us.
+it will be graded on. Versions 5 and 6 (`tasks/hl7-census-drift`) were built on
+that pattern, and v6 went further by hiding two of the four report scripts.
+
+What happened is the finding. Every run that looked like a genuine failure
+traced back to a convention the task relied on but never stated: how a merge
+message names the retired record, how numbers are written, whether identifiers
+move to the surviving patient after a merge. An independent reviewer reading
+only what the agent sees made the same "wrong" choice the models did. Once each
+convention was written down, the models passed. They found all nine planted
+defects in every run. Hiding information made the task unfair, not hard; a
+harder task needs more reasoning with everything stated.
+[`PROPOSAL.md`](PROPOSAL.md) sketches one.
+
+Along the way the verifier was hardened so the agent's code runs as an
+unprivileged user and cannot read the answers or write its own score, tested
+with a deliberately hostile submission. Both adversarial (`/cheat`) trials
+scored zero.
 
 ## What is in the repository
 
 | Path | What it is |
 |---|---|
-| `tasks/hl7-census-drift/` | The current task: broken daemon, memo, recorded traffic, reports, verifier, reference solution |
+| `RESULTS.md` | Final-version checks, trials, and failure analysis: start here |
+| `tasks/hl7-census-drift/` | The final task (v5–v6.3): broken daemon, memo, recorded traffic, reports, sandboxed verifier, reference solution |
 | `tasks/hl7-feed-recovery/` | The previous task (v1–v4), complete and solved by both models; kept as the record of what did not work |
 | `TRIALS.md` | Every agent run, with model, configuration, duration, result and what the agent actually did |
 | `ANALYSIS.md` | Why v1–v4 were solved and what the leaderboard data says about tasks that are not |
 | `DESIGN.md`, `tasks/*/DESIGN.md` | Design notes: planted defects, how each is disguised, how the verifier works |
-| `scripts/` | Tooling: static-check runner, trial summariser, capture builder |
+| `PROPOSAL.md` | A harder sibling task (revocable patient links), proposed and probed, not built |
+| `analysis/` | Independent ambiguity review and design-probe outputs |
+| `scripts/` | Tooling: static checks, trial summariser, capture builder, verifier isolation test |
 
 ## How to run it
 
@@ -91,13 +108,11 @@ and every result are in `TRIALS.md`.
 
 ## About the author
 
-Jason Trent is an architect with a background in healthcare SaaS and security. His
-hands-on HL7 work was integration-engine plumbing in Mirth, not daemon internals;
-what he brought here is knowing how these feeds break in practice and how the
-people downstream of them talk about it. The task was designed and built with
-extensive use of AI coding agents, as the assignment encouraged. The planted
-defects were chosen from the well-known ways HL7 parsers go wrong; the judgment
-about which ones a floor would notice, and how a house supervisor would describe
-them, is his.
+Jason Trent is a systems and cloud architect and a former full-stack engineer,
+with years in healthcare SaaS and security. He is not an HL7 specialist: his
+hands-on HL7 work was integration-engine plumbing in Mirth. He picked this domain
+because he knows how these feeds fail downstream. The code was written by AI
+coding agents (Claude Code and Codex), as the assignment allowed; he directed the
+design, decided what counted as a fair failure, and verified every result.
 
 Contact: jason@jtrent.dev · [jtrent.dev](https://jtrent.dev)
